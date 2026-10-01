@@ -5,10 +5,14 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+
 try:
     from zoneinfo import ZoneInfo
 except ImportError:
-    from backports.zoneinfo import ZoneInfo  # type: ignore
+    try:
+        from backports.zoneinfo import ZoneInfo  # type: ignore
+    except ImportError:
+        ZoneInfo = None  # type: ignore
 
 
 @dataclass(frozen=True)
@@ -29,13 +33,17 @@ def parse_transaction_date(
     today: date | None = None,
     timezone: str = "Asia/Jakarta",
 ) -> ParsedDate:
-    """Parse supported Indonesian date tokens from quick input text.
+    """Parse supported Indonesian date tokens from quick input text."""
+    if today is not None:
+        effective_today = today
+    elif ZoneInfo is not None:
+        try:
+            effective_today = datetime.now(ZoneInfo(timezone)).date()
+        except Exception:
+            effective_today = datetime.now().date()
+    else:
+        effective_today = datetime.now().date()
 
-    If no date token exists, return today's date in WIB/Jakarta by default.
-    Supported tokens: ``hari ini``, ``kemarin``, ``DD/MM/YYYY``, ``YYYY-MM-DD``.
-    """
-
-    effective_today = today or datetime.now(ZoneInfo(timezone)).date()
     transaction_date = effective_today
     cleaned_text = text
 

@@ -1,4 +1,4 @@
-"""Domain types for Bot04."""
+"""Domain types and constants for the Finance API."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ except ImportError:
     from enum import Enum
 
     class StrEnum(str, Enum):  # type: ignore[no-redef]
+        """Fallback for Python < 3.11."""
         def __str__(self) -> str:
             return str(self.value)
 
@@ -29,11 +30,9 @@ _TRANSACTION_TYPE_LABELS: dict[TransactionType, str] = {
 
 def valid_transaction_type_values() -> set[str]:
     """Return all supported transaction type values."""
-
-    return {transaction_type.value for transaction_type in TransactionType}
+    return {t.value for t in TransactionType}
 
 
 def transaction_type_label(transaction_type: TransactionType | str) -> str:
     """Return the Indonesian display label for a transaction type."""
-
     return _TRANSACTION_TYPE_LABELS[TransactionType(transaction_type)]
