@@ -1,195 +1,206 @@
-# Bot04 — Telegram Personal Finance Tracker
+# 💰 AppFinanceIndv — Personal Finance Management System
 
-Bot04 adalah chatbot Telegram untuk mencatat pemasukan, pengeluaran, investasi, dan menampilkan laporan keuangan personal per user Telegram.
+Aplikasi pencatatan dan pengelolaan keuangan personal all-in-one berbasis **Mobile App (Expo + React Native)**, **Backend REST API (FastAPI)**, dan **Telegram Bot Tracker**.
 
-## Fitur MVP
+---
 
-- Input cepat lewat teks bebas, misalnya `makan 25000`.
-- Preview transaksi sebelum disimpan.
-- Konfirmasi dengan tombol `✅ Simpan` / `❌ Batal`.
-- Flow tombol manual untuk pemasukan, pengeluaran, dan investasi.
-- Laporan harian, mingguan, bulanan, kategori, dan investasi.
-- Data dipisahkan per user Telegram berdasarkan `telegram_user_id`.
-- Storage lokal SQLite.
+## 🌟 Fitur Utama
 
-## Setup Lokal
+### 📱 1. Mobile Application (Android & iOS)
+- **Dashboard Ringkasan**: Tampilan modern sisa saldo bersih (*net balance*), total pemasukan, dan total pengeluaran.
+- **Input Cepat (Quick Input Text)**: Ketik transaksi dengan format bahasa natural seperti:
+  - `makan 25000`
+  - `kopi 25k kemarin`
+  - `gaji 5000000 bonus`
+  - `invest btc 100000 dca`
+  - Dilengkapi *live preview* dan tombol konfirmasi `Simpan` / `Batal`.
+- **🤝 Fitur Hutang & Piutang (Debts & Receivables)**:
+  - Pencatatan hutang (kewajiban bayar) dan piutang (hak tagih).
+  - Pembayaran cicilan bertahap (*installment payments*) dengan riwayat pembayaran lengkap.
+  - Progress bar visual pelunasan.
+  - Indikator status otomatis: **Lunas**, **Segera Jatuh Tempo** (≤ 7 hari), dan **Lewat Jatuh Tempo**.
+  - Widget ringkasan hutang & piutang langsung di dashboard utama.
+- **📊 Laporan & Analitik**:
+  - Filter laporan harian, mingguan, dan bulanan.
+  - Visualisasi alokasi pengeluaran per kategori.
+  - Laporan portofolio investasi.
+- **🎨 Desain Modern Dark Theme**:
+  - Glassmorphism dark UI yang elegan dan nyaman di mata.
+  - Warna aksen tematik (*cyan* untuk hutang, *purple* untuk piutang, *emerald* untuk pemasukan, *rose* untuk pengeluaran).
 
-### 1. Clone / masuk ke folder project
+---
 
-```bash
-cd /root/projects/bot04
+### ⚡ 2. Backend REST API (FastAPI + SQLite)
+- **Arsitektur Modular**: Terstruktur rapi dengan database layer, service layer, router, dan Pydantic schemas.
+- **Autentikasi JWT**: Registrasi, login, dan proteksi endpoint berbasis bearer token.
+- **Natural Language Parser**: Service pemrosesan teks bebas menjadi nominal, tanggal, kategori, dan catatan transaksi.
+- **Manajemen Hutang & Piutang**: Endpoints CRUD lengkap dengan kalkulasi sisa hutang dan riwayat pembayaran cicilan.
+- **Dokumentasi Interaktif**: Swagger UI otomatis di `/docs` dan ReDoc di `/redoc`.
+
+---
+
+### 🤖 3. Telegram Bot Tracker (`src/bot04/`)
+- Chatbot Telegram untuk pencatatan transaksi secara instan langsung dari chat.
+- Flow tombol interaktif dan inline keyboard.
+- Perintah laporan cepat: `/today`, `/week`, `/month`, `/riwayat_pemasukan`, `/riwayat_pengeluaran`.
+
+---
+
+## 🛠️ Tech Stack
+
+| Komponen | Teknologi |
+|----------|-----------|
+| **Mobile Frontend** | React Native, Expo SDK 52, TypeScript, Expo Router |
+| **Icons & UI** | `@expo/vector-icons` (Ionicons), Custom Design System Tokens |
+| **Backend API** | Python 3.10+, FastAPI, Pydantic, Uvicorn |
+| **Database** | SQLite3 (dengan skema relasional transaksi, kategori, debts, dan payments) |
+| **Autentikasi** | JWT (JSON Web Tokens), PBKDF2 / Bcrypt password hashing |
+| **Telegram Bot** | Python Telegram Bot |
+
+---
+
+## 📁 Struktur Direktori
+
+```text
+AppFinanceIndv/
+├── backend/                  # 🐍 Backend FastAPI & Database
+│   ├── app/
+│   │   ├── auth/             # Logika otentikasi JWT & password hashing
+│   │   ├── database/         # Database connection, schema, & CRUD queries
+│   │   │   ├── debts.py      # Layer database hutang & cicilan
+│   │   │   ├── schema.py     # Inisialisasi tabel SQLite
+│   │   │   └── ...
+│   │   ├── models/           # Domain models & Pydantic request/response schemas
+│   │   ├── reports/          # Agregator data laporan harian/mingguan/bulanan
+│   │   ├── routes/           # REST API endpoints (auth, debts, transactions, reports)
+│   │   ├── services/         # Quick input parser & business logic
+│   │   └── main.py           # Entrypoint aplikasi FastAPI
+│   ├── requirements.txt      # Dependency Python backend
+│   └── tests/                # Automated API tests
+│
+├── mobile/                   # 📱 Expo + React Native Mobile App
+│   ├── app/                  # Expo Router (File-based routing)
+│   │   ├── (auth)/           # Halaman login & register
+│   │   ├── (tabs)/           # Tab utama: Dashboard, Add, Debts, Reports, Settings
+│   │   └── _layout.tsx       # Root navigation layout
+│   ├── components/           # Komponen UI: DebtCard, DebtSummaryCard, QuickInputBar, dll.
+│   ├── services/             # Integrasi HTTP API (Axios / Fetch)
+│   ├── types/                # TypeScript interface definitions
+│   ├── utils/                # Format Rupiah, tema warna, dsb.
+│   └── package.json          # Dependencies Expo
+│
+├── src/                      # 🤖 Telegram Bot Source Code
+│   └── bot04/
+│       ├── bot/              # Handlers pesan & callback query
+│       ├── database/         # SQLite storage untuk bot
+│       └── services/         # Text parser & helper
+│
+├── docs/                     # 📚 Dokumentasi tambahan
+│   └── mobile-quickstart.md  # Panduan cepat setup mobile app
+├── .gitignore                # Konfigurasi filter Git
+└── README.md                 # Dokumentasi utama proyek
 ```
 
-### 2. Buat virtual environment
+---
+
+## 🚀 Panduan Menjalankan Aplikasi
+
+### 1. Menjalankan Backend (FastAPI)
+
+Pastikan Python 3.10+ sudah terinstal di sistem Anda.
 
 ```bash
+# 1. Masuk ke direktori backend
+cd backend
+
+# 2. Buat dan aktifkan virtual environment
 python -m venv .venv
+
+# Windows (PowerShell):
+.venv\Scripts\Activate.ps1
+# Linux / macOS / WSL:
 source .venv/bin/activate
+
+# 3. Install dependencies
+pip install -r requirements.txt
+
+# 4. Buat file .env
+copy .env.example .env   # (Windows)
+# atau: cp .env.example .env (Linux/Mac)
+
+# 5. Jalankan server FastAPI
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Jika environment sudah tersedia, cukup aktifkan environment tersebut.
+- **API Documentation (Swagger)**: Buka [http://localhost:8000/docs](http://localhost:8000/docs)
+- **Health Check**: [http://localhost:8000/](http://localhost:8000/)
 
-### 3. Install package
+---
+
+### 2. Menjalankan Mobile App (Expo)
+
+Pastikan [Node.js](https://nodejs.org/) (versi LTS 18+ atau 20+) sudah terinstal.
 
 ```bash
-python -m pip install -e .
+# 1. Masuk ke direktori mobile
+cd mobile
+
+# 2. Install dependencies
+npm install
+# atau: yarn install
+
+# 3. Jalankan Expo Development Server
+npx expo start
 ```
 
-Untuk kebutuhan development/test:
+**Pilihan Pengujian:**
+- **Smartphone Fisik (Android/iOS)**: Buka aplikasi **Expo Go** di ponsel Anda, lalu scan QR Code yang muncul di terminal.
+- **Web Browser**: Tekan tombol `w` di terminal untuk membuka antarmuka web responsif.
+- **Android Emulator**: Tekan tombol `a` di terminal.
+- **iOS Simulator**: Tekan tombol `i` di terminal (khusus macOS).
+
+> **Catatan Konfigurasi API Mobile:**  
+> Jika menjalankan Expo di HP fisik, sesuaikan URL backend pada file `mobile/services/api.ts` ke alamat IP lokal komputer Anda (contoh: `http://192.168.1.10:8000`), bukan `localhost`.
+
+---
+
+### 3. Menjalankan Telegram Bot (Opsional)
 
 ```bash
-python -m pip install -e .[dev]
-```
+# 1. Salin konfigurasi environment bot
+copy .env.example .env
 
-### 4. Buat file konfigurasi
+# 2. Masukkan BOT_TOKEN dari @BotFather ke file .env
 
-Copy `.env.example` ke `.env`:
-
-```bash
-cp .env.example .env
-```
-
-Lalu isi `BOT_TOKEN` di `.env` dengan token bot Telegram dari BotFather.
-
-Contoh isi `.env`:
-
-```env
-BOT_TOKEN=isi_token_bot_di_sini
-DATABASE_PATH=bot04.sqlite3
-TIMEZONE=Asia/Jakarta
-CURRENCY=IDR
-```
-
-Jangan commit `.env` karena berisi token rahasia.
-
-## Cara Menjalankan Bot
-
-Cek konfigurasi tanpa menjalankan polling Telegram:
-
-```bash
-python -m bot04.main --dry-run
-```
-
-Jalankan bot:
-
-```bash
+# 3. Jalankan bot
 python -m bot04.main
 ```
 
-Jika `BOT_TOKEN` sudah benar, bot akan mulai polling dan siap menerima pesan Telegram.
+---
 
-## Cara Menjalankan Test
+## 📡 Ringkasan Endpoints API (Hutang & Piutang)
 
-Jalankan seluruh test:
+| Method | Endpoint | Deskripsi |
+|--------|----------|-----------|
+| `GET` | `/debts/summary` | Ringkasan total hutang, total piutang, posisi bersih, dan counter |
+| `GET` | `/debts/` | Mengambil daftar hutang/piutang (dengan filter status & tipe) |
+| `POST` | `/debts/` | Membuat data hutang atau piutang baru |
+| `GET` | `/debts/{debt_id}` | Mendapatkan detail data hutang beserta histori cicilan |
+| `PUT` | `/debts/{debt_id}` | Memperbarui data hutang |
+| `DELETE` | `/debts/{debt_id}` | Menghapus data hutang |
+| `POST` | `/debts/{debt_id}/payments` | Mencatat pembayaran cicilan hutang/piutang |
+| `GET` | `/debts/{debt_id}/payments` | Mengambil riwayat transaksi pembayaran cicilan |
 
-```bash
-pytest
-```
+---
 
-Atau:
+## 🔒 Keamanan & Praktik Terbaik
 
-```bash
-python -m pytest -q
-```
+- File konfigurasi rahasia seperti `.env` dan file database lokal (`*.sqlite3`, `*.db`) sudah diatur untuk diabaikan oleh Git melalui file [`.gitignore`](.gitignore).
+- Password pengguna dienkripsi dengan standar industri (hashing dengan salt).
+- Akses data transaksi dan hutang terisolasi per pengguna yang terautentikasi.
 
-Jalankan test tertentu:
+---
 
-```bash
-python -m pytest tests/test_help_text.py -q
-```
+## 📄 Lisensi
 
-## Cara Pakai Bot
-
-Mulai dari Telegram:
-
-```text
-/start
-```
-
-Buka menu utama:
-
-```text
-/menu
-```
-
-Buka bantuan:
-
-```text
-/help
-```
-
-## Input Cepat
-
-Cara tercepat mencatat transaksi adalah langsung mengetik pesan.
-
-Contoh input cepat:
-
-```text
-makan 25000
-kopi 25k kemarin
-gojek 15000 kantor
-gaji 5000000
-invest btc 100000 dca mingguan
-```
-
-Bot akan membaca nominal, kategori, tipe transaksi, tanggal, dan catatan jika tersedia. Setelah itu bot menampilkan preview. Tekan `✅ Simpan` jika sudah benar.
-
-## Tombol Manual
-
-Menu utama menyediakan tombol:
-
-- `➕ Pemasukan`
-- `➖ Pengeluaran`
-- `📈 Investasi`
-- `📊 Laporan`
-- `🗂 Kategori`
-- `⚙️ Pengaturan`
-
-Flow manual MVP:
-
-1. Pilih tipe transaksi dari tombol.
-2. Pilih kategori.
-3. Masukkan nominal dan catatan opsional.
-4. Cek preview.
-5. Tekan `✅ Simpan` untuk menyimpan atau `❌ Batal` untuk membatalkan.
-
-## Laporan
-
-Command laporan:
-
-```text
-/today
-/week
-/month
-/report
-```
-
-- `/today`: laporan hari ini.
-- `/week`: laporan minggu berjalan.
-- `/month`: laporan bulan berjalan.
-- `/report`: menu pilihan laporan.
-- `/riwayat_pemasukan`: melihat riwayat pemasukan, 10 data per halaman, terbaru dulu.
-- `/riwayat_pengeluaran`: melihat riwayat pengeluaran, 10 data per halaman, terbaru dulu.
-
-## Struktur Project
-
-```text
-bot04/
-├── README.md
-├── pyproject.toml
-├── .env.example
-├── docs/
-├── src/
-│   └── bot04/
-│       ├── bot/
-│       ├── database/
-│       ├── reports/
-│       └── services/
-└── tests/
-```
-
-## Catatan Keamanan
-
-- `.env` tidak boleh dipush ke GitHub.
-- `BOT_TOKEN` jangan ditampilkan di log atau chat.
-- Database SQLite default berada di `bot04.sqlite3`.
+Proyek ini dikembangkan untuk kebutuhan manajemen keuangan personal dan didistribusikan secara terbuka untuk pengembangan lebih lanjut.
