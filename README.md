@@ -1,5 +1,7 @@
 # 💰 AppFinanceIndv — Personal Finance Management System
 
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
 Aplikasi pencatatan dan pengelolaan keuangan personal all-in-one berbasis **Mobile App (Expo + React Native)**, **Backend REST API (FastAPI)**, dan **Telegram Bot Tracker**.
 
 ---
@@ -203,4 +205,16 @@ python -m bot04.main
 
 ## 📄 Lisensi
 
-Proyek ini dikembangkan untuk kebutuhan manajemen keuangan personal dan didistribusikan secara terbuka untuk pengembangan lebih lanjut.
+Proyek ini dilisensikan di bawah lisensi **[Apache License 2.0](LICENSE)**.
+
+Anda memiliki kebebasan untuk:
+- Menggunakan kode ini untuk keperluan pribadi maupun **komersial**.
+- Memodifikasi, mengembangkan, dan mendistribusikan salinan kode sumber atau bentuk biner.
+- Mendapatkan lisensi hak paten eksplisit dari para kontributor.
+
+Dengan ketentuan:
+- Menyertakan salinan lisensi [**Apache-2.0**](LICENSE) dan pemberitahuan hak cipta (*copyright notice*) asli.
+- Menyertakan catatan perubahan (*prominent notices*) jika Anda melakukan modifikasi pada file kode.
+- Software ini disediakan *"AS IS"* tanpa jaminan atau garansi dalam bentuk apa pun.
+
+Untuk ketentuan dan klausul hukum selengkapnya, silakan lihat file [LICENSE](LICENSE).
