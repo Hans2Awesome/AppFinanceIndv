@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 
 const getBaseUrl = () => {
-  return 'https://mesa-forbes-tariff-relationship.trycloudflare.com';
+  return 'https://does-nevada-away-shannon.trycloudflare.com';
 };
 
 export const API_BASE_URL = getBaseUrl();

@@ -1,13 +1,14 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
   RefreshControl,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from 'expo-router';
 import { Colors } from '../../utils/colors';
 import { PeriodReport, Transaction } from '../../types';
 import { ReportSummaryCard } from '../../components/ReportSummaryCard';
@@ -46,9 +47,11 @@ export default function ReportsScreen() {
     }
   }, [period]);
 
-  useEffect(() => {
-    fetchReport();
-  }, [fetchReport]);
+  useFocusEffect(
+    useCallback(() => {
+      fetchReport();
+    }, [fetchReport])
+  );
 
   const onRefresh = async () => {
     setRefreshing(true);

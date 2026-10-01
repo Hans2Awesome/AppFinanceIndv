@@ -24,6 +24,25 @@ Panduan menjalankan **Personal Finance Mobile App** berbasis **Expo + React Nati
 
 ## 🚀 Cara Menjalankan
 
+### Cara Paling Cepat (1-Click / Otomatis 1 Perintah) ⚡
+Jalankan salah satu cara di bawah ini untuk memulai **Backend + Tunnel + Expo Metro + QR Code** sekaligus dalam hitungan detik:
+
+- **Dari Windows Explorer**: Cukup **Double-click** file [`start.bat`](../start.bat)
+- **Dari PowerShell**:
+  ```powershell
+  .\start.ps1
+  ```
+- **Dari WSL / Linux**:
+  ```bash
+  python3 scripts/run_app.py
+  ```
+
+Skrip ini otomatis mengaktifkan server FastAPI, menghubungkan Cloudflare Tunnel agar HP bisa mengakses via internet seluler, memperbarui `api.ts`, dan langsung memunculkan QR Code di terminal.
+
+---
+
+### Cara Manual (Langkah demi Langkah)
+
 ### Langkah 1: Jalankan Backend FastAPI
 
 Buka terminal di root project atau via WSL:
