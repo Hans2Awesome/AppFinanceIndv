@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 
 DEFAULT_MAX_ATTEMPTS = 5
 DEFAULT_WINDOW_SECONDS = 15 * 60
+# Batas kunci aktif di RAM agar serangan ribuan IP acak tidak habiskan memori VPS.
+MAX_BUCKETS = 10_000
 
 
 @dataclass
@@ -47,6 +49,8 @@ class SlidingWindowLimiter:
         """Record one failed attempt for the key."""
 
         with self._lock:
+            if key not in self._buckets and len(self._buckets) >= MAX_BUCKETS:
+                self._evict_oldest()
             bucket = self._buckets.setdefault(key, _Bucket())
             self._prune(bucket)
             bucket.failures.append(time.monotonic())
@@ -60,6 +64,14 @@ class SlidingWindowLimiter:
     def _prune(self, bucket: _Bucket) -> None:
         cutoff = time.monotonic() - self._window_seconds
         bucket.failures = [moment for moment in bucket.failures if moment > cutoff]
+
+    def _evict_oldest(self) -> None:
+        """Buang kunci tertua ketika kapasitas penuh (FIFO eviction)."""
+
+        if not self._buckets:
+            return
+        oldest_key = next(iter(self._buckets))
+        self._buckets.pop(oldest_key, None)
 
 
 login_limiter = SlidingWindowLimiter(max_attempts=5, window_seconds=15 * 60)

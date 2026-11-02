@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors, Space, Type } from '../../utils/theme';
 import { PeriodReport, Transaction, User, DebtSummary } from '../../types';
 import { ReportSummaryCard } from '../../components/ReportSummaryCard';
@@ -106,6 +107,29 @@ export default function DashboardScreen() {
         </Pressable>
       </FadeIn>
 
+      <FadeIn delay={210}>
+        <SectionHeader
+          title="Otomatisasi"
+          actionLabel="Kelola"
+          onAction={() => router.push('/recurring')}
+        />
+        <Pressable
+          onPress={() => router.push('/recurring')}
+          accessibilityRole="button"
+          accessibilityLabel="Buka transaksi berulang"
+          style={({ pressed }) => [styles.recurringRow, pressed ? styles.pressed : null]}
+        >
+          <View style={styles.recurringIcon}>
+            <Ionicons name="repeat" size={17} color={Colors.inkSoft} />
+          </View>
+          <View style={styles.recurringBody}>
+            <Text style={styles.recurringTitle}>Transaksi berulang</Text>
+            <Text style={styles.recurringHint}>Atur jadwal mingguan atau bulanan</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={Colors.inkMuted} />
+        </Pressable>
+      </FadeIn>
+
       <FadeIn delay={240}>
         <SectionHeader
           title="Transaksi terbaru"
@@ -142,6 +166,35 @@ const styles = StyleSheet.create({
   greeting: {
     ...Type.h1,
     marginBottom: Space.lg,
+  },
+  recurringRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Space.md,
+    minHeight: 56,
+    paddingVertical: Space.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.line,
+  },
+  recurringIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: Colors.surfaceAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recurringBody: {
+    flex: 1,
+    minWidth: 0,
+  },
+  recurringTitle: {
+    ...Type.bodyStrong,
+    color: Colors.ink,
+  },
+  recurringHint: {
+    ...Type.caption,
+    marginTop: 2,
   },
   pressed: {
     opacity: 0.85,

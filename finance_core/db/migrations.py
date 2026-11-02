@@ -10,7 +10,9 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Callable
 
-SCHEMA_VERSION = 2
+from .postgres_schema import run_postgres_migrations
+
+SCHEMA_VERSION = 4
 
 
 def _create_core_tables(connection: sqlite3.Connection) -> None:
@@ -200,9 +202,124 @@ def _migration_2(connection: sqlite3.Connection) -> None:
     _create_integrity_triggers(connection)
 
 
+def _add_column_if_missing(
+    connection: sqlite3.Connection,
+    table: str,
+    column: str,
+    definition: str,
+) -> None:
+    """Add a column to an existing table, ignoring databases that already have it."""
+
+    existing_columns = {
+        row["name"] for row in connection.execute(f"PRAGMA table_info({table})").fetchall()
+    }
+    if column not in existing_columns:
+        connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+
+def _create_recurring_table(connection: sqlite3.Connection) -> None:
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS recurring_transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            type TEXT NOT NULL,
+            category_id INTEGER,
+            amount INTEGER NOT NULL,
+            note TEXT,
+            asset_name TEXT,
+            frequency TEXT NOT NULL,
+            day_of_week INTEGER,
+            day_of_month INTEGER,
+            start_date TEXT NOT NULL,
+            next_run_date TEXT NOT NULL,
+            last_run_date TEXT,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_recurring_due
+            ON recurring_transactions (is_active, next_run_date);
+        CREATE INDEX IF NOT EXISTS idx_recurring_user
+            ON recurring_transactions (user_id, is_active, next_run_date);
+
+        CREATE TRIGGER IF NOT EXISTS trg_recurring_valid_insert
+        BEFORE INSERT ON recurring_transactions
+        WHEN NEW.type NOT IN ('income', 'expense', 'investment')
+             OR NEW.amount <= 0
+             OR NEW.frequency NOT IN ('weekly', 'monthly')
+             OR NEW.is_active NOT IN (0, 1)
+             OR (NEW.frequency = 'weekly'
+                 AND (NEW.day_of_week IS NULL OR NEW.day_of_week < 0 OR NEW.day_of_week > 6))
+             OR (NEW.frequency = 'monthly'
+                 AND (NEW.day_of_month IS NULL OR NEW.day_of_month < 1 OR NEW.day_of_month > 31))
+        BEGIN SELECT RAISE(ABORT, 'invalid recurring transaction row'); END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_recurring_valid_update
+        BEFORE UPDATE ON recurring_transactions
+        WHEN NEW.type NOT IN ('income', 'expense', 'investment')
+             OR NEW.amount <= 0
+             OR NEW.frequency NOT IN ('weekly', 'monthly')
+             OR NEW.is_active NOT IN (0, 1)
+             OR (NEW.frequency = 'weekly'
+                 AND (NEW.day_of_week IS NULL OR NEW.day_of_week < 0 OR NEW.day_of_week > 6))
+             OR (NEW.frequency = 'monthly'
+                 AND (NEW.day_of_month IS NULL OR NEW.day_of_month < 1 OR NEW.day_of_month > 31))
+        BEGIN SELECT RAISE(ABORT, 'invalid recurring transaction row'); END;
+        """
+    )
+
+
+def _migration_3(connection: sqlite3.Connection) -> None:
+    """Recurring schedules plus cash links for generated transactions and debts."""
+
+    _create_recurring_table(connection)
+    _add_column_if_missing(connection, "transactions", "source_key", "TEXT")
+    _add_column_if_missing(connection, "debts", "cash_synced", "INTEGER NOT NULL DEFAULT 0")
+    connection.executescript(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_transactions_source_key
+            ON transactions (source_key)
+            WHERE source_key IS NOT NULL;
+        """
+    )
+
+
+def _create_telegram_link_codes_table(connection: sqlite3.Connection) -> None:
+    """Kode tautan satu kali pakai untuk menghubungkan akun Mobile dengan Telegram."""
+
+    connection.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS telegram_link_codes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            code TEXT NOT NULL UNIQUE,
+            expires_at TEXT NOT NULL,
+            used INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_telegram_link_codes_code
+            ON telegram_link_codes (code);
+        CREATE INDEX IF NOT EXISTS idx_telegram_link_codes_user
+            ON telegram_link_codes (user_id);
+        """
+    )
+
+
+def _migration_4(connection: sqlite3.Connection) -> None:
+    """Account linking between Mobile (email) and Telegram (telegram_user_id)."""
+
+    _create_telegram_link_codes_table(connection)
+
+
 _MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
     1: _migration_1,
     2: _migration_2,
+    3: _migration_3,
+    4: _migration_4,
 }
 
 
@@ -219,6 +336,11 @@ def _ensure_version_table(connection: sqlite3.Connection) -> None:
 
 def run_migrations(connection: sqlite3.Connection) -> int:
     """Apply every pending migration and return the resulting schema version."""
+
+    from .connection import is_postgres
+
+    if is_postgres(connection):
+        return run_postgres_migrations(connection)
 
     # WAL is a persistent database property, so it belongs to the startup path,
     # not to every request connection.

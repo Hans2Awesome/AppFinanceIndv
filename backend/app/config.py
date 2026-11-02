@@ -21,10 +21,13 @@ class Settings:
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 30
     database_path: str = "bot04.sqlite3"
+    database_url: str | None = None
     timezone: str = "Asia/Jakarta"
     currency: str = "IDR"
     cors_origins: tuple[str, ...] = field(default_factory=lambda: ("*",))
     environment: str = "development"
+    recurring_scheduler_enabled: bool = True
+    recurring_scheduler_interval_seconds: int = 30
 
     @property
     def is_production(self) -> bool:
@@ -35,6 +38,13 @@ class Settings:
         """Credentials cannot be combined with a wildcard CORS origin."""
 
         return "*" not in self.cors_origins
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    """Read a boolean environment flag with a permissive set of false values."""
+
+    raw = env_value(name, "1" if default else "0").strip().lower()
+    return raw not in {"", "0", "false", "no", "off"}
 
 
 def get_settings(*, load_dotenv_file: bool = True) -> Settings:
@@ -70,10 +80,16 @@ def get_settings(*, load_dotenv_file: bool = True) -> Settings:
         access_token_expire_minutes=int(env_value("ACCESS_TOKEN_EXPIRE_MINUTES", "30")),
         refresh_token_expire_days=int(env_value("REFRESH_TOKEN_EXPIRE_DAYS", "30")),
         database_path=common.database_path,
+        database_url=common.database_url,
         timezone=common.timezone,
         currency=common.currency,
         cors_origins=cors_origins,
         environment=environment,
+        recurring_scheduler_enabled=_env_bool("RECURRING_SCHEDULER_ENABLED", True),
+        recurring_scheduler_interval_seconds=max(
+            5,
+            int(env_value("RECURRING_SCHEDULER_INTERVAL_SECONDS", "30")),
+        ),
     )
 
     if settings.is_production and not settings.allow_credentials:

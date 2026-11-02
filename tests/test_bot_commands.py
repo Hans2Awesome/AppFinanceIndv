@@ -16,4 +16,5 @@ def test_bot_commands_match_bot03_style_menu_for_bot04() -> None:
         ("report", "📊 Menu Laporan"),
         ("riwayat_pemasukan", "💰 Riwayat Pemasukan"),
         ("riwayat_pengeluaran", "💸 Riwayat Pengeluaran"),
+        ("link", "🔗 Hubungkan akun Telegram"),
     ]

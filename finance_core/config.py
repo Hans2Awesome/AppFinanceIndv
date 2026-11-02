@@ -18,6 +18,7 @@ class CommonSettings:
     """Configuration values every adapter needs."""
 
     database_path: str = "bot04.sqlite3"
+    database_url: str | None = None
     timezone: str = "Asia/Jakarta"
     currency: str = "IDR"
     environment: str = "development"
@@ -46,6 +47,7 @@ def get_common_settings(*, load_dotenv_file: bool = True) -> CommonSettings:
 
     return CommonSettings(
         database_path=env_value("DATABASE_PATH", "bot04.sqlite3"),
+        database_url=env_value("DATABASE_URL", "") or None,
         timezone=env_value("TIMEZONE", "Asia/Jakarta"),
         currency=env_value("CURRENCY", "IDR"),
         environment=env_value("ENVIRONMENT", "development"),

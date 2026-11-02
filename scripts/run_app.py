@@ -101,7 +101,8 @@ def main():
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT_DIR)
     p_backend = subprocess.Popen(
-        f"{uvicorn_command()} --host 0.0.0.0 --port 8000",
+        f"{uvicorn_command()} --host 0.0.0.0 --port 8000 "
+        f'--proxy-headers --forwarded-allow-ips="127.0.0.1"',
         cwd=str(ROOT_DIR),
         shell=True,
         stdout=open(backend_log, 'w'),

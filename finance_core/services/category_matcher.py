@@ -33,10 +33,36 @@ _INVESTMENT_ASSET_ALIASES: dict[str, str] = {
 }
 
 
-def match_category(text: str) -> CategoryMatch:
-    """Match text to a default category using category aliases."""
+def match_category(
+    text: str,
+    custom_categories: list[tuple[str, str]] | None = None,
+) -> CategoryMatch:
+    """Match text to a category.
+
+    Custom categories (name + type from the user's database) are checked first
+    using a case-insensitive substring match, so a user's own category name
+    takes priority over the default aliases. Falls back to ``DEFAULT_CATEGORIES``
+    and then ``Lainnya``.
+    """
+
     normalized_text = _normalize_text(text)
     tokens = set(normalized_text.split())
+
+    # Custom categories first: exact substring match against the user's own
+    # category names takes priority over default aliases.
+    if custom_categories:
+        for category_type, category_name in custom_categories:
+            normalized_name = _normalize_text(category_name)
+            if not normalized_name:
+                continue
+            if normalized_name in tokens or normalized_name in normalized_text:
+                return CategoryMatch(
+                    category_type,
+                    category_name,
+                    asset_name=None,
+                    confidence=1.0,
+                    needs_review=False,
+                )
 
     best_match: CategoryMatch | None = None
     best_score = 0

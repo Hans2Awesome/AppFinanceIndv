@@ -9,7 +9,9 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from finance_core.db.categories import category_belongs_to
+from finance_core.db.connection import transaction as db_transaction
 from finance_core.db.transactions import (
+    DerivedTransactionError,
     create_transaction,
     delete_transaction,
     get_transaction_by_id,
@@ -58,24 +60,25 @@ def create_new_transaction(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Kategori tidak valid untuk transaksi ini.",
         )
-    if category_id is None and payload.category_name:
-        category_id = find_or_create_category(
+    with db_transaction(db):
+        if category_id is None and payload.category_name:
+            category_id = find_or_create_category(
+                db,
+                user_id=current_user.id,
+                category_type=payload.type,
+                category_name=payload.category_name,
+            )
+
+        transaction = create_transaction(
             db,
             user_id=current_user.id,
-            category_type=payload.type,
-            category_name=payload.category_name,
+            type=payload.type,
+            category_id=category_id,
+            amount=payload.amount,
+            note=payload.note,
+            asset_name=payload.asset_name,
+            transaction_date=payload.transaction_date.isoformat(),
         )
-
-    transaction = create_transaction(
-        db,
-        user_id=current_user.id,
-        type=payload.type,
-        category_id=category_id,
-        amount=payload.amount,
-        note=payload.note,
-        asset_name=payload.asset_name,
-        transaction_date=payload.transaction_date.isoformat(),
-    )
     return TransactionResponse.model_validate(transaction)
 
 
@@ -136,7 +139,10 @@ def confirm_quick_input(
         )
 
     try:
-        transaction = save_quick_input_transaction(db, user_id=current_user.id, preview=result)
+        with db_transaction(db):
+            transaction = save_quick_input_transaction(
+                db, user_id=current_user.id, preview=result
+            )
     except TransactionServiceError as error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -216,18 +222,22 @@ def edit_transaction(
                 detail="Kategori tidak valid untuk transaksi ini.",
             )
 
-    updated = update_transaction(
-        db,
-        user_id=current_user.id,
-        transaction_id=transaction_id,
-        amount=payload.amount,
-        category_id=payload.category_id,
-        transaction_date=(
-            payload.transaction_date.isoformat() if payload.transaction_date else None
-        ),
-        note=payload.note,
-        asset_name=payload.asset_name,
-    )
+    try:
+        with db_transaction(db):
+            updated = update_transaction(
+                db,
+                user_id=current_user.id,
+                transaction_id=transaction_id,
+                amount=payload.amount,
+                category_id=payload.category_id,
+                transaction_date=(
+                    payload.transaction_date.isoformat() if payload.transaction_date else None
+                ),
+                note=payload.note,
+                asset_name=payload.asset_name,
+            )
+    except DerivedTransactionError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     if updated is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND_DETAIL)
     return TransactionResponse.model_validate(updated)
@@ -241,5 +251,13 @@ def remove_transaction(
 ) -> None:
     """Delete a transaction."""
 
-    if not delete_transaction(db, user_id=current_user.id, transaction_id=transaction_id):
+    try:
+        with db_transaction(db):
+            deleted = delete_transaction(
+                db, user_id=current_user.id, transaction_id=transaction_id
+            )
+    except DerivedTransactionError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+
+    if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND_DETAIL)

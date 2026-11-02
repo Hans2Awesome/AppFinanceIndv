@@ -256,3 +256,53 @@ def test_edit_text_without_pending_edit_is_ignored() -> None:
     )
 
     assert response is None
+
+def test_derived_transactions_are_locked_in_the_bot() -> None:
+    connection = setup_connection()
+    user_id = setup_user(connection)
+    derived = create_transaction(
+        connection,
+        user_id=user_id,
+        type="expense",
+        category_id=category_id(connection, user_id, "expense", "Makan & Minum"),
+        amount=100_000,
+        note="pinjam Budi",
+        asset_name=None,
+        transaction_date="2026-05-30",
+        source_key=f"debt:{user_id}:1",
+    )
+    store = PendingConfirmationStore()
+
+    delete_prompt = handle_transactions_callback(
+        f"{CALLBACK_TRANSACTION_DELETE_PREFIX}{derived.id}",
+        connection=connection,
+        user_id=user_id,
+        telegram_user_id=796529359,
+        pending_store=store,
+    )
+    delete_confirm = handle_transactions_callback(
+        f"{CALLBACK_TRANSACTION_DELETE_CONFIRM_PREFIX}{derived.id}",
+        connection=connection,
+        user_id=user_id,
+        telegram_user_id=796529359,
+        pending_store=store,
+    )
+    edit_prompt = handle_transactions_callback(
+        f"{CALLBACK_TRANSACTION_EDIT_PREFIX}{derived.id}",
+        connection=connection,
+        user_id=user_id,
+        telegram_user_id=796529359,
+        pending_store=store,
+    )
+
+    expected = TransactionHandlerResponse(
+        text=(
+            "⚠️ Transaksi ini berasal dari utang/piutang.\n"
+            "Ubah atau hapus lewat menu Utang agar saldo dan status tetap sinkron."
+        ),
+        reply_markup=None,
+    )
+    assert delete_prompt == expected
+    assert delete_confirm == expected
+    assert edit_prompt == expected
+    assert len(list_transactions(connection, user_id=user_id)) == 1

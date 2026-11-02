@@ -81,4 +81,6 @@ rewriting `mobile/services/api.ts`.
   after the 10-minute TTL window.
 - Reports aggregate in Python over the requested date range. Fine for personal
   data volumes; move to SQL `SUM ... GROUP BY` if ranges grow large.
-- SQLite with WAL supports the single-instance deployment model only.
+- SQLite with WAL supports the single-instance deployment model only. Setting
+  `DATABASE_URL` moves the same schema and queries to PostgreSQL (Supabase), so
+  several API workers can share one database.

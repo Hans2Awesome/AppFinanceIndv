@@ -11,6 +11,8 @@ requires-python = ">=3.11"
 dependencies = [
     "python-telegram-bot>=21.0,<22.0",
     "python-dotenv>=1.0,<2.0",
+    "psycopg[binary]>=3.2,<4.0",
+    "psycopg-pool>=3.2,<4.0",
 ]
 
 [project.optional-dependencies]

@@ -66,8 +66,9 @@ def seed_default_categories(connection: sqlite3.Connection, user_id: int) -> Non
 
     connection.executemany(
         """
-        INSERT OR IGNORE INTO categories (user_id, type, name, aliases, is_default)
+        INSERT INTO categories (user_id, type, name, aliases, is_default)
         VALUES (?, ?, ?, ?, 1)
+        ON CONFLICT DO NOTHING
         """,
         [
             (user_id, transaction_type.value, name, aliases)

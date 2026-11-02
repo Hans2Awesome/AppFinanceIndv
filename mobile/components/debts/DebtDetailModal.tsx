@@ -103,6 +103,7 @@ export function DebtDetailModal({ debt, visible, onClose, onChanged }: DebtDetai
           onPress: async () => {
             try {
               setRecord(await debtApi.updateDebt(record.id, { status: 'settled' }));
+              await loadPayments(record.id);
               onChanged();
             } catch (err) {
               Alert.alert('Error', describeApiError(err, 'Gagal memperbarui status.'));
@@ -159,6 +160,11 @@ export function DebtDetailModal({ debt, visible, onClose, onChanged }: DebtDetai
           {settled ? (
             <View style={[styles.tag, { backgroundColor: Colors.incomeTint }]}>
               <Text style={[styles.tagText, { color: Colors.income }]}>LUNAS</Text>
+            </View>
+          ) : null}
+          {record.cash_synced ? (
+            <View style={[styles.tag, { backgroundColor: Colors.inkTint }]}>
+              <Text style={[styles.tagText, { color: Colors.inkSoft }]}>KAS TERSINKRON</Text>
             </View>
           ) : null}
         </View>

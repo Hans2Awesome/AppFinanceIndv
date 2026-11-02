@@ -103,6 +103,7 @@ export interface Debt {
   note?: string | null;
   due_date?: string | null; // YYYY-MM-DD
   status: DebtStatus;
+  cash_synced?: boolean;
   created_at?: string | null;
   updated_at?: string | null;
 }
@@ -122,5 +123,43 @@ export interface DebtSummary {
   active_debt_count: number;
   active_receivable_count: number;
   due_soon_count: number;
+}
+
+// --- Recurring Transaction Types ---
+
+export type RecurringFrequency = 'weekly' | 'monthly';
+
+export interface RecurringTransaction {
+  id: number;
+  user_id: number;
+  type: TransactionType;
+  category_id?: number | null;
+  category_name?: string | null;
+  amount: number;
+  note?: string | null;
+  asset_name?: string | null;
+  frequency: RecurringFrequency;
+  day_of_week?: number | null; // 0 = Monday, 6 = Sunday
+  day_of_month?: number | null;
+  start_date: string; // YYYY-MM-DD
+  next_run_date: string; // YYYY-MM-DD
+  last_run_date?: string | null;
+  is_active: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface RecurringPayload {
+  type: TransactionType;
+  category_id?: number | null;
+  category_name?: string;
+  amount: number;
+  note?: string;
+  asset_name?: string;
+  frequency: RecurringFrequency;
+  day_of_week?: number | null;
+  day_of_month?: number | null;
+  start_date: string;
+  is_active?: boolean;
 }
 

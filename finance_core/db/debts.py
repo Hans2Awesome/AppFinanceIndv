@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
+from datetime import date as date_value
+from datetime import timedelta
 from typing import Optional
 
-from .connection import transaction
+from .connection import is_postgres
 
 
 @dataclass(frozen=True)
@@ -22,6 +24,7 @@ class Debt:
     note: Optional[str]
     due_date: Optional[str]
     status: str  # 'active' or 'settled'
+    cash_synced: int = 0
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
@@ -49,6 +52,7 @@ def _row_to_debt(row: sqlite3.Row) -> Debt:
         note=row["note"],
         due_date=row["due_date"],
         status=row["status"],
+        cash_synced=row["cash_synced"] if "cash_synced" in row.keys() else 0,
         created_at=row["created_at"] if "created_at" in row.keys() else None,
         updated_at=row["updated_at"] if "updated_at" in row.keys() else None,
     )
@@ -79,15 +83,16 @@ def create_debt(
     total_amount: int,
     note: str | None = None,
     due_date: str | None = None,
+    cash_synced: bool = False,
 ) -> Debt:
     """Create a new debt/receivable record."""
     connection.row_factory = sqlite3.Row
     cursor = connection.execute(
         """
-        INSERT INTO debts (user_id, type, person_name, total_amount, note, due_date)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO debts (user_id, type, person_name, total_amount, note, due_date, cash_synced)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (user_id, type, person_name, total_amount, note, due_date),
+        (user_id, type, person_name, total_amount, note, due_date, 1 if cash_synced else 0),
     )
     debt_id = cursor.lastrowid
     debt = get_debt_by_id(connection, user_id=user_id, debt_id=debt_id)
@@ -101,18 +106,25 @@ def get_debt_by_id(
     *,
     user_id: int,
     debt_id: int,
+    for_update: bool = False,
 ) -> Debt | None:
-    """Fetch one debt by ID owned by user."""
+    """Fetch one debt by ID owned by user.
+
+    When ``for_update`` is true and the connection talks to PostgreSQL, the row
+    is locked with ``SELECT ... FOR UPDATE`` so concurrent installment writes
+    cannot both read the same ``paid_amount`` and overpay the debt. SQLite does
+    not support row locks, so the flag is ignored there.
+    """
     connection.row_factory = sqlite3.Row
-    row = connection.execute(
-        """
+    sql = """
         SELECT id, user_id, type, person_name, total_amount, paid_amount,
-               note, due_date, status, created_at, updated_at
+               note, due_date, status, cash_synced, created_at, updated_at
         FROM debts
         WHERE id = ? AND user_id = ?
-        """,
-        (debt_id, user_id),
-    ).fetchone()
+    """
+    if for_update and is_postgres(connection):
+        sql += " FOR UPDATE"
+    row = connection.execute(sql, (debt_id, user_id)).fetchone()
     if row is None:
         return None
     return _row_to_debt(row)
@@ -132,7 +144,7 @@ def list_debts(
 
     query = """
         SELECT id, user_id, type, person_name, total_amount, paid_amount,
-               note, due_date, status, created_at, updated_at
+               note, due_date, status, cash_synced, created_at, updated_at
         FROM debts
         WHERE user_id = ?
     """
@@ -189,18 +201,116 @@ def update_debt(
     return get_debt_by_id(connection, user_id=user_id, debt_id=debt_id)
 
 
+def sync_derived_debt_transaction(
+    connection: sqlite3.Connection,
+    *,
+    user_id: int,
+    debt_id: int,
+    amount: int,
+) -> None:
+    """Perbarui jumlah baris kas yang dihasilkan dari sebuah utang/piutang.
+
+    Baris kas memiliki ``source_key = debt:<user_id>:<debt_id>`` dan secara
+    normal hanya bisa dibaca (guard P1). Fungsi ini diizinkan melewati guard
+    karena dipanggil dari domain utang saat nominal diubah, dalam transaksi
+    yang sama, sehingga saldo kas tidak pernah berselisih dengan utang.
+    """
+
+    connection.execute(
+        """
+        UPDATE transactions
+        SET amount = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE user_id = ? AND source_key = ?
+        """,
+        (amount, user_id, f"debt:{user_id}:{debt_id}"),
+    )
+
+
 def delete_debt(
     connection: sqlite3.Connection,
     *,
     user_id: int,
     debt_id: int,
 ) -> bool:
-    """Delete one owned debt/receivable and its payments."""
+    """Delete one owned debt/receivable, its payments, and their cash rows.
+
+    Cash transactions generated from the debt are removed too, so a deleted debt
+    cannot leave a stray expense or income row in the report.
+    """
+
+    payment_ids = [
+        row["id"]
+        for row in connection.execute(
+            "SELECT id FROM debt_payments WHERE debt_id = ?",
+            (debt_id,),
+        ).fetchall()
+    ]
+    source_keys = [f"debt:{user_id}:{debt_id}"]
+    source_keys.extend(
+        f"debt_payment:{user_id}:{payment_id}" for payment_id in payment_ids
+    )
+
+    placeholders = ", ".join("?" for _ in source_keys)
+    connection.execute(
+        f"DELETE FROM transactions WHERE user_id = ? AND source_key IN ({placeholders})",
+        (user_id, *source_keys),
+    )
+
     cursor = connection.execute(
         "DELETE FROM debts WHERE id = ? AND user_id = ?",
         (debt_id, user_id),
     )
     return cursor.rowcount > 0
+
+
+def delete_debt_payment(
+    connection: sqlite3.Connection,
+    *,
+    user_id: int,
+    debt_id: int,
+    payment_id: int,
+) -> DebtPayment | None:
+    """Hapus satu cicilan, baris kasnya, dan hitung ulang sisa utang/piutang.
+
+    Mengembalikan pembayaran yang dihapus, atau None jika utang/pembayaran
+    tidak ditemukan atau bukan milik pengguna.
+    """
+
+    connection.row_factory = sqlite3.Row
+
+    debt = get_debt_by_id(connection, user_id=user_id, debt_id=debt_id)
+    if debt is None:
+        return None
+
+    payment_row = connection.execute(
+        """
+        SELECT id, debt_id, amount, note, payment_date, created_at
+        FROM debt_payments
+        WHERE id = ? AND debt_id = ?
+        """,
+        (payment_id, debt_id),
+    ).fetchone()
+    if payment_row is None:
+        return None
+    payment = _row_to_payment(payment_row)
+
+    connection.execute("DELETE FROM debt_payments WHERE id = ?", (payment_id,))
+    connection.execute(
+        "DELETE FROM transactions WHERE user_id = ? AND source_key = ?",
+        (user_id, f"debt_payment:{user_id}:{payment_id}"),
+    )
+
+    new_paid = max(0, debt.paid_amount - payment.amount)
+    new_status = "settled" if new_paid >= debt.total_amount else "active"
+    connection.execute(
+        """
+        UPDATE debts
+        SET paid_amount = ?, status = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (new_paid, new_status, debt_id),
+    )
+    return payment
 
 
 def get_debt_summary(
@@ -215,6 +325,8 @@ def get_debt_summary(
     user's timezone instead of the server's UTC clock.
     """
 
+    due_limit = (date_value.fromisoformat(today) + timedelta(days=7)).isoformat()
+
     row = connection.execute(
         """
         SELECT
@@ -222,19 +334,19 @@ def get_debt_summary(
             COALESCE(SUM(CASE WHEN type = 'receivable' AND status = 'active' THEN total_amount - paid_amount ELSE 0 END), 0) AS total_receivable_remaining,
             COALESCE(SUM(CASE WHEN type = 'debt' AND status = 'active' THEN 1 ELSE 0 END), 0) AS active_debt_count,
             COALESCE(SUM(CASE WHEN type = 'receivable' AND status = 'active' THEN 1 ELSE 0 END), 0) AS active_receivable_count,
-            COALESCE(SUM(CASE WHEN status = 'active' AND due_date IS NOT NULL AND due_date <= date(?, '+7 days') AND due_date >= ? THEN 1 ELSE 0 END), 0) AS due_soon_count
+            COALESCE(SUM(CASE WHEN status = 'active' AND due_date IS NOT NULL AND due_date <= ? AND due_date >= ? THEN 1 ELSE 0 END), 0) AS due_soon_count
         FROM debts
         WHERE user_id = ?
         """,
-        (today, today, user_id),
+        (due_limit, today, user_id),
     ).fetchone()
 
     return {
-        "total_debt_remaining": row["total_debt_remaining"],
-        "total_receivable_remaining": row["total_receivable_remaining"],
-        "active_debt_count": row["active_debt_count"],
-        "active_receivable_count": row["active_receivable_count"],
-        "due_soon_count": row["due_soon_count"],
+        "total_debt_remaining": int(row["total_debt_remaining"]),
+        "total_receivable_remaining": int(row["total_receivable_remaining"]),
+        "active_debt_count": int(row["active_debt_count"]),
+        "active_receivable_count": int(row["active_receivable_count"]),
+        "due_soon_count": int(row["due_soon_count"]),
     }
 
 
@@ -255,8 +367,8 @@ def create_debt_payment(
     """Record an installment payment for a debt/receivable."""
     connection.row_factory = sqlite3.Row
 
-    # Verify ownership
-    debt = get_debt_by_id(connection, user_id=user_id, debt_id=debt_id)
+    # Verify ownership (row lock on PostgreSQL to prevent double-submit race).
+    debt = get_debt_by_id(connection, user_id=user_id, debt_id=debt_id, for_update=True)
     if debt is None:
         raise ValueError("Hutang/piutang tidak ditemukan.")
     if debt.status == "settled":
@@ -266,26 +378,25 @@ def create_debt_payment(
     if amount > remaining:
         raise ValueError("Nominal pembayaran melebihi sisa hutang/piutang.")
 
-    with transaction(connection):
-        cursor = connection.execute(
-            """
-            INSERT INTO debt_payments (debt_id, amount, note, payment_date)
-            VALUES (?, ?, ?, ?)
-            """,
-            (debt_id, amount, note, payment_date),
-        )
+    cursor = connection.execute(
+        """
+        INSERT INTO debt_payments (debt_id, amount, note, payment_date)
+        VALUES (?, ?, ?, ?)
+        """,
+        (debt_id, amount, note, payment_date),
+    )
 
-        # Update paid_amount on the debt
-        new_paid = debt.paid_amount + amount
-        new_status = "settled" if new_paid >= debt.total_amount else "active"
-        connection.execute(
-            """
-            UPDATE debts
-            SET paid_amount = ?, status = ?, updated_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-            """,
-            (new_paid, new_status, debt_id),
-        )
+    # Update paid_amount on the debt
+    new_paid = debt.paid_amount + amount
+    new_status = "settled" if new_paid >= debt.total_amount else "active"
+    connection.execute(
+        """
+        UPDATE debts
+        SET paid_amount = ?, status = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+        """,
+        (new_paid, new_status, debt_id),
+    )
 
     payment_id = cursor.lastrowid
     payment = connection.execute(

@@ -48,6 +48,7 @@ def parse_quick_input(
     *,
     today: date | None = None,
     timezone: str = "Asia/Jakarta",
+    custom_categories: list[tuple[str, str]] | None = None,
 ) -> QuickInputResult:
     """Parse quick transaction text into a preview-ready result object."""
     original_text = text.strip()
@@ -65,7 +66,7 @@ def parse_quick_input(
             return _error_result(original_text, "Nominal harus lebih dari 0")
         return _error_result(original_text, "Nominal belum ditemukan")
 
-    category_match = match_category(text_without_date)
+    category_match = match_category(text_without_date, custom_categories=custom_categories)
     note = _build_note(text_without_date, category_match)
 
     return QuickInputResult(

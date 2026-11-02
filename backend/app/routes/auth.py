@@ -2,18 +2,22 @@
 
 from __future__ import annotations
 
+import secrets
 import sqlite3
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from finance_core.db.connection import transaction as db_transaction
 from finance_core.db.users import (
     AppUser,
     bump_token_version,
     create_mobile_user,
+    create_telegram_link_code,
     get_user_by_email,
     get_user_by_id,
 )
 
+from ..auth.client_ip import client_ip
 from ..auth.dependencies import get_current_user, get_db
 from ..auth.jwt_handler import (
     REFRESH_TOKEN_TYPE,
@@ -39,12 +43,8 @@ from ..models.schemas import (
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 
-def _client_host(request: Request) -> str:
-    return request.client.host if request.client else "unknown"
-
-
 def _rate_limit_key(request: Request, email: str) -> str:
-    return f"{_client_host(request)}:{email.strip().lower()}"
+    return f"{client_ip(request)}:{email.strip().lower()}"
 
 
 def _build_token_response(user: AppUser) -> TokenResponse:
@@ -65,7 +65,7 @@ def register(
 ) -> TokenResponse:
     """Register a new user account."""
 
-    limiter_key = f"register:{_client_host(request)}"
+    limiter_key = f"register:{client_ip(request)}"
     if register_limiter.is_blocked(limiter_key):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -80,14 +80,15 @@ def register(
             detail="Email sudah terdaftar.",
         )
 
-    user = create_mobile_user(
-        db,
-        email=payload.email,
-        password_hash=hash_password(payload.password),
-        first_name=payload.first_name,
-        timezone=payload.timezone,
-        currency=payload.currency,
-    )
+    with db_transaction(db):
+        user = create_mobile_user(
+            db,
+            email=payload.email,
+            password_hash=hash_password(payload.password),
+            first_name=payload.first_name,
+            timezone=payload.timezone,
+            currency=payload.currency,
+        )
     return _build_token_response(user)
 
 
@@ -129,7 +130,7 @@ def refresh(
 ) -> TokenResponse:
     """Exchange a valid refresh token for a new token pair."""
 
-    limiter_key = f"refresh:{_client_host(request)}"
+    limiter_key = f"refresh:{client_ip(request)}"
     if refresh_limiter.is_blocked(limiter_key):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -179,7 +180,8 @@ def logout(
 ) -> None:
     """Revoke every access and refresh token issued to the current user."""
 
-    bump_token_version(db, user_id=current_user.id)
+    with db_transaction(db):
+        bump_token_version(db, user_id=current_user.id)
 
 
 @router.get("/me", response_model=UserResponse)
@@ -187,3 +189,20 @@ def get_profile(current_user: AppUser = Depends(get_current_user)) -> UserRespon
     """Get the profile of the currently logged-in user."""
 
     return UserResponse.model_validate(current_user)
+
+
+@router.post("/telegram-link-token", status_code=status.HTTP_201_CREATED)
+def create_telegram_link_token(
+    current_user: AppUser = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+) -> dict[str, str | int]:
+    """Buat kode tautan 6 digit untuk menghubungkan akun ini dengan Bot Telegram.
+
+    Kode berlaku 10 menit dan boleh digunakan satu kali. Pengguna mengirimkannya
+    ke Bot Telegram dengan perintah ``/link <kode>``.
+    """
+
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    with db_transaction(db):
+        create_telegram_link_code(db, user_id=current_user.id, code=code)
+    return {"code": code, "expires_in_minutes": 10}

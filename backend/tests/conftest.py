@@ -7,6 +7,8 @@ import os
 import pytest
 
 os.environ.setdefault("SECRET_KEY", "test-secret-key-1234567890123456789012")
+# Keep the recurring scheduler out of TestClient runs; tests drive the runner directly.
+os.environ.setdefault("RECURRING_SCHEDULER_ENABLED", "0")
 
 
 @pytest.fixture(autouse=True)

@@ -28,6 +28,7 @@ export const debtApi = {
     total_amount: number;
     note?: string;
     due_date?: string;
+    sync_cash?: boolean;
   }): Promise<Debt> {
     const res = await api.post<Debt>('/api/debts', payload);
     return res.data;

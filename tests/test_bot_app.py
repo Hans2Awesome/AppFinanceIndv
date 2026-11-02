@@ -29,7 +29,7 @@ from bot04.bot.handlers_reports import (
 from bot04.bot.handlers_transactions import CALLBACK_TRANSACTIONS_RECENT
 from bot04.config import Config
 from bot04.services.pending_store import PendingConfirmationStore
-from finance_core.db.connection import connect
+from finance_core.db.connection import connect, open_database
 from finance_core.db.migrations import init_db
 
 
@@ -40,7 +40,7 @@ def setup_connection() -> sqlite3.Connection:
 
 
 def make_dependencies() -> BotDependencies:
-    return BotDependencies(connection=setup_connection(), pending_store=PendingConfirmationStore())
+    return BotDependencies(pending_store=PendingConfirmationStore())
 
 
 def test_build_handlers_registers_commands_callbacks_and_quick_input_message_handler() -> None:
@@ -85,7 +85,7 @@ def test_build_application_stores_dependencies_and_registers_handlers() -> None:
     application = build_application(config=config, dependencies=dependencies)
 
     assert isinstance(application, Application)
-    assert application.bot_data["connection"] is dependencies.connection
+    assert application.bot_data["config"] is config
     assert application.bot_data["pending_store"] is dependencies.pending_store
     assert application.post_init is not None
     registered_handlers = [handler for group in application.handlers.values() for handler in group]
@@ -105,10 +105,11 @@ def test_bot_commands_match_bot03_style_menu_for_bot04() -> None:
         ("report", "📊 Menu Laporan"),
         ("riwayat_pemasukan", "💰 Riwayat Pemasukan"),
         ("riwayat_pengeluaran", "💸 Riwayat Pengeluaran"),
+        ("link", "🔗 Hubungkan akun Telegram"),
     ]
 
 
-def test_build_application_creates_sqlite_connection_when_dependencies_not_supplied() -> None:
+def test_build_application_without_dependencies_stores_config_and_pending_store() -> None:
     config = Config(
         bot_token="123456:ABCDEF_fake_token_for_tests",
         database_path=":memory:",
@@ -118,6 +119,24 @@ def test_build_application_creates_sqlite_connection_when_dependencies_not_suppl
 
     application = build_application(config=config)
 
-    assert "connection" in application.bot_data
+    assert "config" in application.bot_data
     assert "pending_store" in application.bot_data
-    application.bot_data["connection"].execute("SELECT COUNT(*) FROM users")
+    assert application.bot_data["config"].database_path == ":memory:"
+
+
+def test_open_database_connection_can_be_used_across_threads(tmp_path) -> None:
+    """Bot membuka koneksi di handler async lalu memakainya di asyncio.to_thread."""
+
+    import asyncio
+
+    database_path = str(tmp_path / "bot.sqlite3")
+    connection = open_database(database_path, check_same_thread=False)
+    init_db(connection)
+
+    async def run_query() -> int:
+        return await asyncio.to_thread(
+            lambda: connection.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        )
+
+    assert asyncio.run(run_query()) == 0
+    connection.close()

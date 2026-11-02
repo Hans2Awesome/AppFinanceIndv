@@ -15,6 +15,7 @@ class Config:
     database_path: str
     timezone: str
     currency: str
+    database_url: str | None = None
 
     @classmethod
     def from_env(cls, *, load_dotenv_file: bool = True) -> "Config":
@@ -24,6 +25,7 @@ class Config:
         return cls(
             bot_token=env_value("BOT_TOKEN", ""),
             database_path=common.database_path,
+            database_url=common.database_url,
             timezone=common.timezone,
             currency=common.currency,
         )

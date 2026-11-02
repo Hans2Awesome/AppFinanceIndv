@@ -5,7 +5,7 @@
 One repository, three clients, one domain layer:
 
 - **Mobile app** — Expo + React Native + TypeScript
-- **REST API** — FastAPI + Pydantic + SQLite
+- **REST API** — FastAPI + Pydantic + PostgreSQL (SQLite for local dev)
 - **Telegram bot** — python-telegram-bot
 
 `finance_core/` holds the shared domain: schema migrations, repositories,
@@ -37,7 +37,7 @@ docs/                  Architecture notes and task plans
 |-----------|------------|
 | Mobile | React Native, Expo SDK 58, TypeScript, Expo Router |
 | Backend | Python 3.11+, FastAPI, Pydantic v2, Uvicorn |
-| Database | SQLite (WAL, versioned migrations, indexes) |
+| Database | PostgreSQL on Supabase; SQLite fallback when `DATABASE_URL` is empty |
 | Auth | JWT access + refresh tokens, bcrypt password hashing |
 | Bot | python-telegram-bot 21 |
 
@@ -71,7 +71,39 @@ uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
 
 `SECRET_KEY` has **no fallback value**. The API refuses to start without it.
 
-### 3. Mobile app
+### 3. Supabase (production database)
+
+Optional. Skip this step to keep using the local SQLite file.
+
+1. Create a project at supabase.com.
+2. Open **Project Settings > Database > Connection string > URI** and copy it.
+3. Put it in the root `.env` and in `backend/.env` as `DATABASE_URL`. Keep
+   `?sslmode=require` at the end, and URL-encode the password.
+4. Create the schema and copy the existing data:
+
+```bash
+python scripts/migrate_sqlite_to_postgres.py \
+  --sqlite bot04.sqlite3 \
+  --database-url "$DATABASE_URL"
+```
+
+The script builds the schema, copies `users`, `categories`, `transactions`,
+`debts`, `debt_payments` and `recurring_transactions` with their original ids,
+resets the id sequences, and verifies every row count. It never writes back to
+SQLite and is safe to re-run: ids that already exist are skipped.
+
+5. Restart the API and the bot. Both read `DATABASE_URL`, so they share one
+   database.
+
+Notes:
+
+- Use the transaction pooler (port `6543`). The driver disables prepared
+  statements because the pooler cannot keep them.
+- `DATABASE_PATH` stays as the fallback for tests and offline development.
+- The recurring scheduler still runs inside the API process, so the API must be
+  running for recurring transactions to be materialized.
+
+### 4. Mobile app
 
 ```bash
 cd mobile
@@ -85,7 +117,7 @@ physical device use your machine's LAN IP, for example
 `EXPO_PUBLIC_API_URL=http://192.168.1.10:8000`. There is no hardcoded tunnel URL
 in the source tree.
 
-### 4. Telegram bot (optional)
+### 5. Telegram bot (optional)
 
 ```bash
 cp .env.example .env
@@ -131,6 +163,10 @@ pytest backend/tests
 
 # Bot + core only
 pytest tests
+
+# PostgreSQL portability (real server required, skipped when unset)
+POSTGRES_TEST_URL="postgresql://user:pass@127.0.0.1:5432/finance_test" \
+  pytest tests/test_postgres_portability.py
 ```
 
 Mobile type checking:
@@ -165,6 +201,11 @@ cd mobile && npx tsc --noEmit
 Dates are ISO `YYYY-MM-DD`. Money is an integer in the smallest currency unit
 (rupiah, no decimals).
 
+Cash transactions generated from a debt or an installment carry a `source_key`
+and are read-only through `/api/transactions`: `PUT` and `DELETE` return `409`.
+Change or remove them through the debt endpoints, so the ledger and the debt
+balance stay in sync. Deleting a debt deletes its generated cash rows too.
+
 ---
 
 ## 🔒 Security notes
@@ -177,6 +218,14 @@ Dates are ISO `YYYY-MM-DD`. Money is an integer in the smallest currency unit
 - Login is rate limited per client IP and email; registration and refresh have
   their own per-IP limits.
 - CORS origins come from `CORS_ORIGINS`; wildcard origins disable credentials.
+- Login throttling keys on the real client IP. `CF-Connecting-IP` and
+  `X-Forwarded-For` are honored only from addresses in `TRUSTED_PROXIES`
+  (localhost by default), so a direct client cannot spoof its address. Run
+  Uvicorn with `--proxy-headers --forwarded-allow-ips="127.0.0.1"` behind the
+  tunnel; `scripts/run_app.py` already does this.
+- `DATABASE_URL` contains the Supabase password. Keep it in `.env` only; never
+  commit it or ship it in the mobile bundle. Mobile and bot talk to the API, not
+  to the database.
 - Database files and `.env` files are git-ignored.
 
 ---

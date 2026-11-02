@@ -78,8 +78,9 @@ from bot04.bot.handlers_transactions import (
 from bot04.bot.help_text import build_help_text
 from bot04.config import Config
 from bot04.services.pending_store import PendingConfirmationStore
-from finance_core.db.connection import connect
+from finance_core.db.connection import open_database
 from finance_core.db.migrations import init_db
+from finance_core.db.users import consume_telegram_link_code, link_telegram_account
 from finance_core.timezones import today_in
 
 BOT_COMMANDS = [
@@ -92,6 +93,7 @@ BOT_COMMANDS = [
     BotCommand("report", "📊 Menu Laporan"),
     BotCommand("riwayat_pemasukan", "💰 Riwayat Pemasukan"),
     BotCommand("riwayat_pengeluaran", "💸 Riwayat Pengeluaran"),
+    BotCommand("link", "🔗 Hubungkan akun Telegram"),
 ]
 
 
@@ -99,7 +101,6 @@ BOT_COMMANDS = [
 class BotDependencies:
     """Runtime dependencies shared by Telegram handlers."""
 
-    connection: sqlite3.Connection
     pending_store: PendingConfirmationStore
 
 
@@ -110,10 +111,20 @@ def build_application(
 ) -> Application:
     """Build a python-telegram-bot Application and register all Bot04 handlers."""
 
-    dependencies = dependencies or build_dependencies(config.database_path)
+    dependencies = dependencies or build_dependencies(
+        config.database_path, database_url=config.database_url
+    )
     application = ApplicationBuilder().token(config.bot_token).concurrent_updates(False).build()
-    application.bot_data["connection"] = dependencies.connection
+    application.bot_data["config"] = config
     application.bot_data["pending_store"] = dependencies.pending_store
+
+    # Inisialisasi skema sekali saat startup (idempoten), lalu lepaskan koneksi.
+    # Bot tidak memegang koneksi statis; setiap pesan buka koneksi sendiri dari pool.
+    startup_connection = open_database(config.database_path, url=config.database_url)
+    try:
+        init_db(startup_connection)
+    finally:
+        startup_connection.close()
 
     for handler in _committing_handlers(build_handlers(dependencies)):
         application.add_handler(handler)
@@ -128,15 +139,12 @@ async def _set_bot_commands(application: Application) -> None:
     await application.bot.set_my_commands(BOT_COMMANDS)
 
 
-def build_dependencies(database_path: str) -> BotDependencies:
-    """Create SQLite and pending-store dependencies for the bot runtime."""
+def build_dependencies(database_path: str, *, database_url: str | None = None) -> BotDependencies:
+    """Create database and pending-store dependencies for the bot runtime."""
 
-    # The bot shares one connection across handler calls, so it must be usable
-    # from the worker thread pool.
-    connection = connect(database_path, check_same_thread=False)
-    init_db(connection)
+    # Bot tidak menyimpan satu koneksi statis. Setiap pesan membuka koneksi
+    # sendiri lewat open_database() (pool untuk PostgreSQL, file untuk SQLite).
     return BotDependencies(
-        connection=connection,
         pending_store=PendingConfirmationStore(),
     )
 
@@ -157,6 +165,7 @@ def build_handlers(dependencies: BotDependencies) -> list[BaseHandler]:
         CommandHandler("riwayat_pemasukan", _riwayat_pemasukan_command),
         CommandHandler("riwayat_pengeluaran", _riwayat_pengeluaran_command),
         CommandHandler("help", _help_command),
+        CommandHandler("link", _link_command),
         CallbackQueryHandler(
             _quick_confirm_callback,
             pattern=f"^({CALLBACK_QUICK_SAVE}|{CALLBACK_QUICK_CANCEL})$",
@@ -292,6 +301,8 @@ async def _quick_input_message(update: Update, context: ContextTypes.DEFAULT_TYP
         telegram_user_id=user.id,
         pending_store=_pending_store(context),
         today=today,
+        connection=_connection(context),
+        user_id=db_user.id,
     )
     if response is None:
         return
@@ -467,6 +478,45 @@ async def _help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await update.effective_message.reply_text(build_help_text())
 
 
+async def _link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Hubungkan akun Telegram milik pengguna dengan akun Mobile via kode 6 digit."""
+
+    user = update.effective_user
+    message = update.effective_message
+    if user is None or message is None or not message.text:
+        return
+
+    parts = message.text.split()
+    if len(parts) != 2:
+        await message.reply_text("Penggunaan: /link <kode 6 digit>")
+        return
+
+    code = parts[1].strip()
+    connection = _connection(context)
+    owner_user_id = await _db_call(
+        consume_telegram_link_code, connection, code=code
+    )
+    if owner_user_id is None:
+        await message.reply_text("Kode tidak valid atau sudah kadaluwarsa.")
+        return
+
+    try:
+        linked_user = await _db_call(
+            link_telegram_account,
+            connection,
+            user_id=owner_user_id,
+            telegram_user_id=user.id,
+        )
+    except sqlite3.IntegrityError:
+        await message.reply_text("Telegram ini sudah terhubung ke akun lain.")
+        return
+
+    await message.reply_text(
+        "Akun Telegram berhasil dihubungkan ke "
+        f"{linked_user.first_name or linked_user.email or linked_user.id}."
+    )
+
+
 async def _report_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     user = update.effective_user
@@ -607,20 +657,33 @@ async def _db_call(function: Callable[..., object], /, *args: object, **kwargs: 
 
 
 def _with_db_transaction(callback: Callable[..., object]) -> Callable[..., object]:
-    """Commit one handler's writes, roll back on failure."""
+    """Commit one handler's writes, roll back on failure.
+
+    Setiap pesan membuka koneksi database sendiri melalui ``open_database()``
+    (pool untuk PostgreSQL, file untuk SQLite) dan melepasnya di ``finally``,
+    sehingga koneksi basi ke Supabase tidak pernah disimpan selamanya di
+    ``bot_data``.
+    """
 
     @functools.wraps(callback)
     async def wrapped(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        connection = _connection(context)
+        config = context.application.bot_data["config"]
+        connection = open_database(
+            config.database_path,
+            url=config.database_url,
+            check_same_thread=False,
+        )
+        context.user_data["connection"] = connection
         try:
             await callback(update, context)  # type: ignore[misc]
         except BaseException:
-            with _DB_LOCK:
-                connection.rollback()
+            connection.rollback()
             raise
         else:
-            with _DB_LOCK:
-                connection.commit()
+            connection.commit()
+        finally:
+            connection.close()
+            context.user_data.pop("connection", None)
 
     return wrapped
 
@@ -634,7 +697,7 @@ def _committing_handlers(handlers: list[BaseHandler]) -> list[BaseHandler]:
 
 
 def _connection(context: ContextTypes.DEFAULT_TYPE) -> sqlite3.Connection:
-    return context.application.bot_data["connection"]
+    return context.user_data["connection"]
 
 
 def _pending_store(context: ContextTypes.DEFAULT_TYPE) -> PendingConfirmationStore:

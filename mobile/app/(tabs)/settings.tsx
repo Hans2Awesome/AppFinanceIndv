@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { Colors, Fonts, Space, Type } from '../../utils/theme';
 import { User } from '../../types';
 import { Button } from '../../components/ui/Button';
@@ -81,6 +82,26 @@ export default function SettingsScreen() {
         <View style={styles.block}>
           <Row label="Mata uang" value={user?.currency || 'IDR'} />
           <Row label="Zona waktu" value={user?.timezone || 'Asia/Jakarta'} last />
+        </View>
+      </FadeIn>
+
+      <FadeIn delay={150}>
+        <Text style={styles.sectionLabel}>Otomatisasi</Text>
+        <View style={styles.block}>
+          <Pressable
+            onPress={() => router.push('/recurring')}
+            accessibilityRole="button"
+            accessibilityLabel="Transaksi berulang"
+            style={({ pressed }) => [styles.navRow, pressed && styles.pressed]}
+          >
+            <View style={styles.navBody}>
+              <Text style={styles.navTitle}>Transaksi berulang</Text>
+              <Text style={styles.navHint}>
+                Jadwal pemasukan, pengeluaran, dan investasi otomatis
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={Colors.inkMuted} />
+          </Pressable>
         </View>
       </FadeIn>
 
@@ -189,6 +210,28 @@ const styles = StyleSheet.create({
     color: Colors.ink,
     flexShrink: 1,
     textAlign: 'right',
+  },
+  navRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Space.md,
+    minHeight: 58,
+    paddingVertical: Space.sm,
+  },
+  navBody: {
+    flex: 1,
+    minWidth: 0,
+  },
+  navTitle: {
+    ...Type.bodyStrong,
+    color: Colors.ink,
+  },
+  navHint: {
+    ...Type.caption,
+    marginTop: 2,
+  },
+  pressed: {
+    opacity: 0.7,
   },
   logout: {
     marginTop: Space.sm,

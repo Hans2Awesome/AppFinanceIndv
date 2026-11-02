@@ -33,6 +33,8 @@ def test_init_db_creates_core_tables() -> None:
         "transactions",
         "debts",
         "debt_payments",
+        "recurring_transactions",
+        "telegram_link_codes",
         "schema_migrations",
     }
 
@@ -71,6 +73,7 @@ def test_init_db_creates_expected_columns() -> None:
         "note",
         "asset_name",
         "transaction_date",
+        "source_key",
         "created_at",
         "updated_at",
     }
@@ -102,7 +105,7 @@ def test_init_db_is_idempotent_and_records_version() -> None:
 
     versions = connection.execute("SELECT version FROM schema_migrations").fetchall()
 
-    assert [row[0] for row in versions] == [1, 2]
+    assert [row[0] for row in versions] == [1, 2, 3, 4]
 
 
 def test_users_telegram_user_id_must_be_unique() -> None:

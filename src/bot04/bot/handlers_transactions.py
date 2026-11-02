@@ -10,9 +10,11 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from bot04.services.pending_store import PendingConfirmationStore
 from finance_core.db.transactions import (
+    DerivedTransactionError,
     Transaction,
     delete_transaction,
     get_transaction_by_id,
+    is_derived_transaction,
     list_transactions,
     update_transaction,
 )
@@ -26,6 +28,10 @@ CALLBACK_TRANSACTION_DELETE_PREFIX = "transaction_delete:"
 CALLBACK_TRANSACTION_DELETE_CONFIRM_PREFIX = "transaction_delete_confirm:"
 CALLBACK_TRANSACTION_DELETE_CANCEL = "transaction_delete_cancel"
 _EDIT_PENDING_PREFIX = "edit_transaction:"
+_DERIVED_TRANSACTION_TEXT = (
+    "⚠️ Transaksi ini berasal dari utang/piutang.\n"
+    "Ubah atau hapus lewat menu Utang agar saldo dan status tetap sinkron."
+)
 
 _AMOUNT_TOKEN_PATTERN = re.compile(
     r"(?i)(?:rp\s*)?\d+(?:[.,]\d+)*(?:(?:\s*(?:rb|ribu|jt|juta)\b)|(?:\s*k\b))?"
@@ -55,7 +61,12 @@ def handle_transactions_callback(
 
     if callback_data.startswith(CALLBACK_TRANSACTION_DELETE_CONFIRM_PREFIX):
         transaction_id = _parse_prefixed_id(callback_data, CALLBACK_TRANSACTION_DELETE_CONFIRM_PREFIX)
-        deleted = delete_transaction(connection, user_id=user_id, transaction_id=transaction_id)
+        try:
+            deleted = delete_transaction(
+                connection, user_id=user_id, transaction_id=transaction_id
+            )
+        except DerivedTransactionError:
+            return TransactionHandlerResponse(text=_DERIVED_TRANSACTION_TEXT, reply_markup=None)
         if not deleted:
             return TransactionHandlerResponse(text="Transaksi tidak ditemukan.", reply_markup=None)
         return TransactionHandlerResponse(text="✅ Transaksi berhasil dihapus.", reply_markup=None)
@@ -65,6 +76,8 @@ def handle_transactions_callback(
         transaction = _fetch_owned_transaction(connection, user_id=user_id, transaction_id=transaction_id)
         if transaction is None:
             return TransactionHandlerResponse(text="Transaksi tidak ditemukan.", reply_markup=None)
+        if is_derived_transaction(transaction):
+            return TransactionHandlerResponse(text=_DERIVED_TRANSACTION_TEXT, reply_markup=None)
         return TransactionHandlerResponse(
             text=f"Yakin hapus transaksi {_format_transaction_short(transaction)}?",
             reply_markup=InlineKeyboardMarkup(
@@ -88,6 +101,8 @@ def handle_transactions_callback(
         transaction = _fetch_owned_transaction(connection, user_id=user_id, transaction_id=transaction_id)
         if transaction is None:
             return TransactionHandlerResponse(text="Transaksi tidak ditemukan.", reply_markup=None)
+        if is_derived_transaction(transaction):
+            return TransactionHandlerResponse(text=_DERIVED_TRANSACTION_TEXT, reply_markup=None)
         pending_store.set(
             telegram_user_id=telegram_user_id,
             preview=_edit_pending(transaction_id=transaction.id),
@@ -119,6 +134,9 @@ def handle_transaction_edit_text(
     if transaction is None:
         pending_store.clear(telegram_user_id=telegram_user_id)
         return TransactionHandlerResponse(text="Transaksi tidak ditemukan.", reply_markup=None)
+    if is_derived_transaction(transaction):
+        pending_store.clear(telegram_user_id=telegram_user_id)
+        return TransactionHandlerResponse(text=_DERIVED_TRANSACTION_TEXT, reply_markup=None)
 
     try:
         amount = parse_money(text)

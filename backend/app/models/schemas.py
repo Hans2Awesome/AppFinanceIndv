@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 TransactionTypeValue = Literal["income", "expense", "investment"]
 DebtTypeValue = Literal["debt", "receivable"]
@@ -167,6 +167,65 @@ class InvestmentReportResponse(BaseModel):
     by_asset: list[CategoryTotalItem]
 
 
+# --- Recurring Transaction Schemas ---
+
+
+class RecurringCreate(BaseModel):
+    type: TransactionTypeValue
+    category_id: Optional[int] = None
+    category_name: Optional[str] = None
+    amount: int = Field(..., gt=0)
+    note: Optional[str] = Field(None, max_length=500)
+    asset_name: Optional[str] = Field(None, max_length=80)
+    frequency: Literal["weekly", "monthly"]
+    day_of_week: Optional[int] = Field(None, ge=0, le=6)
+    day_of_month: Optional[int] = Field(None, ge=1, le=31)
+    start_date: date
+    is_active: bool = True
+
+    @model_validator(mode="after")
+    def _validate_schedule(self) -> "RecurringCreate":
+        from finance_core.recurring import validate_schedule
+
+        validate_schedule(self.frequency, self.day_of_week, self.day_of_month)
+        return self
+
+
+class RecurringUpdate(BaseModel):
+    type: Optional[TransactionTypeValue] = None
+    category_id: Optional[int] = None
+    category_name: Optional[str] = None
+    amount: Optional[int] = Field(None, gt=0)
+    note: Optional[str] = Field(None, max_length=500)
+    asset_name: Optional[str] = Field(None, max_length=80)
+    frequency: Optional[Literal["weekly", "monthly"]] = None
+    day_of_week: Optional[int] = Field(None, ge=0, le=6)
+    day_of_month: Optional[int] = Field(None, ge=1, le=31)
+    start_date: Optional[date] = None
+    is_active: Optional[bool] = None
+
+
+class RecurringResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_id: int
+    type: str
+    category_id: Optional[int] = None
+    category_name: Optional[str] = None
+    amount: int
+    note: Optional[str] = None
+    asset_name: Optional[str] = None
+    frequency: str
+    day_of_week: Optional[int] = None
+    day_of_month: Optional[int] = None
+    start_date: str
+    next_run_date: str
+    last_run_date: Optional[str] = None
+    is_active: bool
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
 # --- Debt Schemas ---
 
 
@@ -176,6 +235,8 @@ class DebtCreate(BaseModel):
     total_amount: int = Field(..., gt=0)
     note: Optional[str] = Field(None, max_length=500)
     due_date: Optional[date] = None
+    # Post the cash movement (borrow = income, lend = expense) immediately.
+    sync_cash: bool = False
 
 
 class DebtUpdate(BaseModel):
@@ -198,6 +259,7 @@ class DebtResponse(BaseModel):
     note: Optional[str] = None
     due_date: Optional[str] = None
     status: str
+    cash_synced: bool = False
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 

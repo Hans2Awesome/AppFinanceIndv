@@ -8,6 +8,7 @@ import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { Sheet } from '../ui/Sheet';
 import { Segmented, SegmentedItem } from '../ui/Segmented';
+import { Checkbox } from '../ui/Checkbox';
 
 interface CreateDebtModalProps {
   visible: boolean;
@@ -28,6 +29,7 @@ export function CreateDebtModal({ visible, onClose, onCreated }: CreateDebtModal
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [dueDate, setDueDate] = useState('');
+  const [syncCash, setSyncCash] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,6 +38,7 @@ export function CreateDebtModal({ visible, onClose, onCreated }: CreateDebtModal
     setAmount('');
     setNote('');
     setDueDate('');
+    setSyncCash(false);
     setError(null);
   };
 
@@ -70,6 +73,7 @@ export function CreateDebtModal({ visible, onClose, onCreated }: CreateDebtModal
         total_amount: parsedAmount,
         note: note.trim() || undefined,
         due_date: dueDate.trim() || undefined,
+        sync_cash: syncCash,
       });
       reset();
       onCreated();
@@ -138,6 +142,17 @@ export function CreateDebtModal({ visible, onClose, onCreated }: CreateDebtModal
           placeholder="Catatan tambahan"
           value={note}
           onChangeText={setNote}
+        />
+
+        <Checkbox
+          checked={syncCash}
+          onChange={setSyncCash}
+          label="Sinkronkan ke kas"
+          hint={
+            type === 'debt'
+              ? 'Kas bertambah saat hutang dibuat, berkurang saat cicilan dibayar.'
+              : 'Kas berkurang saat piutang dibuat, bertambah saat pembayaran diterima.'
+          }
         />
       </ScrollView>
     </Sheet>

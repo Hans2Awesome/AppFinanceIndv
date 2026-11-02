@@ -8,7 +8,7 @@ from collections.abc import Generator
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from finance_core.db.connection import connect
+from finance_core.db.connection import open_database
 from finance_core.db.users import AppUser, get_user_by_id
 
 from ..config import get_settings
@@ -21,15 +21,17 @@ security = HTTPBearer(auto_error=True)
 def get_db() -> Generator[sqlite3.Connection, None, None]:
     """Provide one database connection per request.
 
-    The schema is migrated once at startup, never here. ``check_same_thread``
-    is disabled because FastAPI may run the dependency and the endpoint in
-    different thread-pool threads; the connection itself is request-scoped.
+    The schema is migrated once at startup, never here. PostgreSQL connections
+    come from a shared pool and SQLite connections are opened per request.
+    ``check_same_thread`` is disabled because FastAPI may run the dependency and
+    the endpoint in different thread-pool threads.
 
     Repositories do not commit. The request is the transaction boundary: a
     successful response commits, an exception rolls back.
     """
 
-    connection = connect(get_settings().database_path, check_same_thread=False)
+    settings = get_settings()
+    connection = open_database(settings.database_path, url=settings.database_url)
     try:
         yield connection
     except BaseException:

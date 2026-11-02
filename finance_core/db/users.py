@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 from .categories import seed_default_categories
 from .connection import transaction
@@ -186,3 +187,159 @@ def bump_token_version(connection: sqlite3.Connection, *, user_id: int) -> AppUs
         if cursor.rowcount == 0:
             return None
     return get_user_by_id(connection, user_id)
+
+
+def create_telegram_link_code(
+    connection: sqlite3.Connection,
+    *,
+    user_id: int,
+    code: str,
+    ttl_minutes: int = 10,
+) -> str:
+    """Buat kode tautan satu pakai untuk menghubungkan akun Mobile dengan Telegram."""
+
+    expires_at = (
+        datetime.now(timezone.utc) + timedelta(minutes=ttl_minutes)
+    ).strftime("%Y-%m-%d %H:%M:%S")
+    connection.execute(
+        """
+        INSERT INTO telegram_link_codes (user_id, code, expires_at, used)
+        VALUES (?, ?, ?, 0)
+        """,
+        (user_id, code, expires_at),
+    )
+    return code
+
+
+def consume_telegram_link_code(
+    connection: sqlite3.Connection,
+    *,
+    code: str,
+) -> int | None:
+    """Verifikasi dan konsumsi kode tautan. Mengembalikan user_id atau None jika tidak valid/kedaluwarsa."""
+
+    row = connection.execute(
+        """
+        SELECT id, user_id, expires_at, used
+        FROM telegram_link_codes
+        WHERE code = ? AND used = 0
+        """,
+        (code,),
+    ).fetchone()
+    if row is None:
+        return None
+    if row["expires_at"] < datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"):
+        return None
+    connection.execute(
+        "UPDATE telegram_link_codes SET used = 1 WHERE id = ?",
+        (row["id"],),
+    )
+    return int(row["user_id"])
+
+
+def link_telegram_account(
+    connection: sqlite3.Connection,
+    *,
+    user_id: int,
+    telegram_user_id: int,
+) -> AppUser:
+    """Gabungkan identitas Telegram ke baris akun Mobile utama.
+
+    Jika ``telegram_user_id`` sudah terdaftar pada baris bot lain (dibuat via
+    ``/start``), semua transaksi, utang, kategori, dan jadwal berulang dipindahkan
+    ke ``user_id`` utama, baris bot dihapus, lalu ``telegram_user_id`` diisi pada
+    baris utama.
+    """
+
+    connection.row_factory = sqlite3.Row
+
+    # Cek apakah telegram_user_id sudah digunakan oleh baris lain (biasanya bot).
+    bot_user = get_user_by_telegram_id(connection, telegram_user_id)
+    if bot_user is not None and bot_user.id != user_id:
+        bot_id = bot_user.id
+
+        # Petakan kategori bot ke kategori owner yang setara (type + name),
+        # agar UNIQUE (user_id, type, name) tidak bentrok saat digabung.
+        bot_categories = connection.execute(
+            "SELECT id, type, name, aliases, is_default FROM categories WHERE user_id = ?",
+            (bot_id,),
+        ).fetchall()
+        for category in bot_categories:
+            owner_category = connection.execute(
+                "SELECT id FROM categories WHERE user_id = ? AND type = ? AND name = ?",
+                (user_id, category["type"], category["name"]),
+            ).fetchone()
+            if owner_category is None:
+                cursor = connection.execute(
+                    """
+                    INSERT INTO categories (user_id, type, name, aliases, is_default)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        user_id,
+                        category["type"],
+                        category["name"],
+                        category["aliases"],
+                        category["is_default"],
+                    ),
+                )
+                new_category_id = cursor.lastrowid
+            else:
+                new_category_id = owner_category["id"]
+            connection.execute(
+                "UPDATE transactions SET category_id = ? WHERE category_id = ?",
+                (new_category_id, category["id"]),
+            )
+            connection.execute(
+                "UPDATE recurring_transactions SET category_id = ? WHERE category_id = ?",
+                (new_category_id, category["id"]),
+            )
+
+        # Pindahkan semua data milik bot ke akun utama, lalu hapus kategori bot.
+        connection.execute(
+            "UPDATE transactions SET user_id = ? WHERE user_id = ?", (user_id, bot_id)
+        )
+        connection.execute(
+            "UPDATE debts SET user_id = ? WHERE user_id = ?", (user_id, bot_id)
+        )
+        connection.execute(
+            "UPDATE recurring_transactions SET user_id = ? WHERE user_id = ?",
+            (user_id, bot_id),
+        )
+        connection.execute("DELETE FROM categories WHERE user_id = ?", (bot_id,))
+        # Hapus baris bot duplikat.
+        connection.execute("DELETE FROM users WHERE id = ?", (bot_id,))
+
+    connection.execute(
+        """
+        UPDATE users
+        SET telegram_user_id = ?
+        WHERE id = ?
+        """,
+        (telegram_user_id, user_id),
+    )
+    return get_user_by_id(connection, user_id)
+
+
+def get_telegram_link_code(
+    connection: sqlite3.Connection,
+    *,
+    code: str,
+) -> int | None:
+    """Cek kode tautan tanpa mengonsumsi (digunakan untuk debug/tes)."""
+
+    row = connection.execute(
+        """
+        SELECT user_id, expires_at, used
+        FROM telegram_link_codes
+        WHERE code = ?
+        """,
+        (code,),
+    ).fetchone()
+    if row is None:
+        return None
+    if row["used"] == 1:
+        return None
+    if row["expires_at"] < datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"):
+        return None
+    return int(row["user_id"])

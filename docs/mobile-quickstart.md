@@ -39,7 +39,9 @@ uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
 
 The schema is migrated once at startup. Existing SQLite files from the old
 bot-only schema are upgraded in place (email/password columns added, the legacy
-`wallets` table archived as `wallets_archive`, indexes created).
+`wallets` table archived as `wallets_archive`, indexes created). Set
+`DATABASE_URL` to use PostgreSQL (Supabase) instead; see the README setup
+section and `scripts/migrate_sqlite_to_postgres.py` for copying existing data.
 
 ### 2. Start the mobile app
 

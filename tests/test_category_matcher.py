@@ -82,3 +82,41 @@ def test_match_category_falls_back_to_expense_lainnya_with_review_when_uncertain
         confidence=0.0,
         needs_review=True,
     )
+
+
+def test_match_category_custom_category_takes_priority_over_default() -> None:
+    # "Pulsa" secara default cocok ke Tagihan, tetapi pengguna punya kategori kustom
+    # bernama "Pulsa" dengan tipe income, sehingga kustom harus menang.
+    assert match_category(
+        "pulsa 50000",
+        custom_categories=[("income", "Pulsa")],
+    ) == CategoryMatch(
+        "income",
+        "Pulsa",
+        asset_name=None,
+        confidence=1.0,
+        needs_review=False,
+    )
+
+
+def test_match_category_custom_category_substring_match() -> None:
+    assert match_category(
+        "bayar asuransi jiwa",
+        custom_categories=[("expense", "Asuransi")],
+    ) == CategoryMatch(
+        "expense",
+        "Asuransi",
+        asset_name=None,
+        confidence=1.0,
+        needs_review=False,
+    )
+
+
+def test_match_category_without_custom_uses_default() -> None:
+    assert match_category("gaji 5000000", custom_categories=[]) == CategoryMatch(
+        "income",
+        "Gaji",
+        asset_name=None,
+        confidence=1.0,
+        needs_review=False,
+    )
