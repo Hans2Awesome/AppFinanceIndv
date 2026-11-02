@@ -77,14 +77,17 @@ Optional. Skip this step to keep using the local SQLite file.
 
 1. Create a project at supabase.com.
 2. Open **Project Settings > Database > Connection string > URI** and copy it.
-3. Put it in the root `.env` and in `backend/.env` as `DATABASE_URL`. Keep
-   `?sslmode=require` at the end, and URL-encode the password.
-4. Create the schema and copy the existing data:
+3. Put the **transaction pooler** URI (port `6543`) in the root `.env` and in
+   `backend/.env` as `DATABASE_URL`. Keep `?sslmode=require` at the end, and
+   URL-encode the password.
+4. Create the schema and copy the existing data with the **direct/session**
+   URI (port `5432`), not the pooler URI. DDL and the data copy must run in one
+   session:
 
 ```bash
 python scripts/migrate_sqlite_to_postgres.py \
   --sqlite bot04.sqlite3 \
-  --database-url "$DATABASE_URL"
+  --database-url "postgresql://postgres:<password>@db.<ref>.supabase.co:5432/postgres"
 ```
 
 The script builds the schema, copies `users`, `categories`, `transactions`,
@@ -92,8 +95,9 @@ The script builds the schema, copies `users`, `categories`, `transactions`,
 resets the id sequences, and verifies every row count. It never writes back to
 SQLite and is safe to re-run: ids that already exist are skipped.
 
-5. Restart the API and the bot. Both read `DATABASE_URL`, so they share one
-   database.
+5. Restart the API first, then the bot. Both read `DATABASE_URL`, so they share
+   one database. `docs/deploy-supabase.md` has the full go-live order and the
+   rollback steps.
 
 Notes:
 
