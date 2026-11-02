@@ -11,6 +11,7 @@ export interface User {
   timezone: string;
   currency: string;
   created_at?: string;
+  telegram_linked?: boolean;
 }
 
 export interface AuthResponse {

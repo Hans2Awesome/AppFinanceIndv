@@ -51,7 +51,7 @@ memverifikasi jumlah baris per tabel. Hentikan proses bila ada `MISMATCH`.
 
 ```bash
 sudo systemctl start finance-api
-curl -fsS http://127.0.0.1:8000/health
+curl -fsS http://127.0.0.1:8000/
 ```
 
 API menjalankan `run_migrations` saat startup, jadi skema pasti berada di versi

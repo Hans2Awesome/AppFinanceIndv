@@ -25,6 +25,13 @@ export const authApi = {
     return res.data;
   },
 
+  async createTelegramLinkToken(): Promise<{ code: string; expires_in_minutes: number }> {
+    const res = await api.post<{ code: string; expires_in_minutes: number }>(
+      '/api/auth/telegram-link-token'
+    );
+    return res.data;
+  },
+
   async logout(): Promise<void> {
     try {
       await api.post('/api/auth/logout');

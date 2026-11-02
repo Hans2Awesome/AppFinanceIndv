@@ -28,6 +28,23 @@ export default function SettingsScreen() {
     loadProfile();
   }, []);
 
+  const [linking, setLinking] = useState(false);
+
+  const handleLinkTelegram = async () => {
+    setLinking(true);
+    try {
+      const { code, expires_in_minutes } = await authApi.createTelegramLinkToken();
+      Alert.alert(
+        'Kode tautan Telegram',
+        `Kirim perintah berikut ke Bot04:\n\n/link ${code}\n\nKode berlaku ${expires_in_minutes} menit dan hanya bisa dipakai sekali.`
+      );
+    } catch (err) {
+      Alert.alert('Gagal membuat kode', describeApiError(err, 'Coba lagi sebentar lagi.'));
+    } finally {
+      setLinking(false);
+    }
+  };
+
   const handleLogout = () => {
     Alert.alert('Keluar dari akun', 'Kamu perlu masuk lagi untuk membuka data keuangan.', [
       { text: 'Batal', style: 'cancel' },
@@ -106,6 +123,29 @@ export default function SettingsScreen() {
       </FadeIn>
 
       <FadeIn delay={180}>
+        <Text style={styles.sectionLabel}>Telegram</Text>
+        <View style={styles.block}>
+          <View style={styles.navRow}>
+            <View style={styles.navBody}>
+              <Text style={styles.navTitle}>Hubungkan akun Telegram</Text>
+              <Text style={styles.navHint}>
+                {user?.telegram_linked
+                  ? 'Sudah terhubung. Kirim kode baru bila ingin pindah akun Telegram.'
+                  : 'Minta kode 6 digit, lalu kirim /link <kode> ke Bot04.'}
+              </Text>
+            </View>
+            <Button
+              title={user?.telegram_linked ? 'Kode baru' : 'Kode'}
+              variant="secondary"
+              onPress={handleLinkTelegram}
+              loading={linking}
+              style={styles.linkButton}
+            />
+          </View>
+        </View>
+      </FadeIn>
+
+      <FadeIn delay={210}>
         <Text style={styles.sectionLabel}>Tentang aplikasi</Text>
         <View style={styles.block}>
           <Row label="Versi" value="1.0.0" />
@@ -217,6 +257,9 @@ const styles = StyleSheet.create({
     gap: Space.md,
     minHeight: 58,
     paddingVertical: Space.sm,
+  },
+  linkButton: {
+    flexShrink: 0,
   },
   navBody: {
     flex: 1,

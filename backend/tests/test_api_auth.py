@@ -71,3 +71,48 @@ def test_duplicate_registration_fails(client):
     res2 = client.post("/api/auth/register", json=payload)
     assert res2.status_code == 400
     assert "Email sudah terdaftar" in res2.json()["detail"]
+
+
+def test_telegram_link_token_returns_rotating_six_digit_code(client):
+    registered = client.post(
+        "/api/auth/register",
+        json={"email": "link@example.com", "password": "password123"},
+    )
+    headers = {"Authorization": f"Bearer {registered.json()['access_token']}"}
+
+    first = client.post("/api/auth/telegram-link-token", headers=headers)
+    assert first.status_code == 201
+    first_body = first.json()
+    assert len(first_body["code"]) == 6 and first_body["code"].isdigit()
+    assert first_body["expires_in_minutes"] == 10
+
+    # Kode baru membatalkan kode lama.
+    second = client.post("/api/auth/telegram-link-token", headers=headers)
+    assert second.status_code == 201
+    assert second.json()["code"] != first_body["code"]
+
+    import os
+
+    from finance_core.db.connection import open_database
+    from finance_core.db.users import consume_telegram_link_code
+
+    connection = open_database(os.environ["DATABASE_PATH"])
+    try:
+        assert consume_telegram_link_code(connection, code=first_body["code"]) is None
+        assert consume_telegram_link_code(
+            connection, code=second.json()["code"]
+        ) == registered.json()["user"]["id"]
+    finally:
+        connection.close()
+
+
+def test_profile_reports_telegram_link_state(client):
+    registered = client.post(
+        "/api/auth/register",
+        json={"email": "state@example.com", "password": "password123"},
+    )
+    headers = {"Authorization": f"Bearer {registered.json()['access_token']}"}
+
+    me = client.get("/api/auth/me", headers=headers)
+    assert me.status_code == 200
+    assert me.json()["telegram_linked"] is False

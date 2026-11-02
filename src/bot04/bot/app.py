@@ -80,7 +80,11 @@ from bot04.config import Config
 from bot04.services.pending_store import PendingConfirmationStore
 from finance_core.db.connection import open_database
 from finance_core.db.migrations import init_db
-from finance_core.db.users import consume_telegram_link_code, link_telegram_account
+from finance_core.db.users import (
+    consume_telegram_link_code,
+    link_telegram_account,
+    peek_telegram_link_code,
+)
 from finance_core.timezones import today_in
 
 BOT_COMMANDS = [
@@ -493,9 +497,7 @@ async def _link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     code = parts[1].strip()
     connection = _connection(context)
-    owner_user_id = await _db_call(
-        consume_telegram_link_code, connection, code=code
-    )
+    owner_user_id = await _db_call(peek_telegram_link_code, connection, code=code)
     if owner_user_id is None:
         await message.reply_text("Kode tidak valid atau sudah kadaluwarsa.")
         return
@@ -513,6 +515,10 @@ async def _link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     except sqlite3.IntegrityError:
         await message.reply_text("Telegram ini sudah terhubung ke akun lain.")
         return
+
+    # Kode baru dihanguskan setelah penggabungan berhasil, jadi percobaan yang
+    # ditolak tetap bisa memakai kode yang sama sampai kedaluwarsa.
+    await _db_call(consume_telegram_link_code, connection, code=code)
 
     await message.reply_text(
         "Akun Telegram berhasil dihubungkan ke "
@@ -647,9 +653,10 @@ _DB_LOCK = threading.Lock()
 
 
 async def _db_call(function: Callable[..., object], /, *args: object, **kwargs: object) -> object:
-    """Run synchronous SQLite work off the event loop.
+    """Run synchronous database work off the event loop.
 
-    The bot shares one connection, so every DB call is serialized by a lock.
+    Handlers get their own connection from ``open_database()`` per message, so
+    the lock only serializes database calls inside one process.
     """
 
     def run() -> object:

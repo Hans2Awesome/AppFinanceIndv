@@ -48,6 +48,7 @@ class UserResponse(BaseModel):
     timezone: str = "Asia/Jakarta"
     currency: str = "IDR"
     created_at: Optional[str] = None
+    telegram_linked: bool = False
 
 
 class TokenResponse(BaseModel):

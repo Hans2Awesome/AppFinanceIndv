@@ -29,6 +29,12 @@ class AppUser:
     token_version: int = 0
     created_at: str | None = None
 
+    @property
+    def telegram_linked(self) -> bool:
+        """True bila akun ini sudah terhubung ke satu akun Telegram."""
+
+        return self.telegram_user_id is not None
+
 
 # Alias kept for the Telegram bot's existing imports and tests.
 User = AppUser
@@ -218,6 +224,32 @@ def create_telegram_link_code(
         (user_id, code, expires_at),
     )
     return code
+
+
+def peek_telegram_link_code(
+    connection: sqlite3.Connection,
+    *,
+    code: str,
+) -> int | None:
+    """Baca kode tautan tanpa menghanguskannya. None jika tidak valid/kedaluwarsa.
+
+    Dipakai bot supaya kode tidak hangus ketika penggabungan akun ditolak
+    (misalnya Telegram sudah terhubung ke akun Mobile lain).
+    """
+
+    row = connection.execute(
+        """
+        SELECT id, user_id, expires_at, used
+        FROM telegram_link_codes
+        WHERE code = ? AND used = 0
+        """,
+        (code,),
+    ).fetchone()
+    if row is None:
+        return None
+    if row["expires_at"] < datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"):
+        return None
+    return int(row["user_id"])
 
 
 def consume_telegram_link_code(

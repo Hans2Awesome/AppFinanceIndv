@@ -14,6 +14,7 @@ from finance_core.db.users import (
     create_telegram_link_code,
     get_or_create_user,
     link_telegram_account,
+    peek_telegram_link_code,
 )
 
 
@@ -238,3 +239,22 @@ def test_new_link_code_invalidates_previous_code() -> None:
 
     assert consume_telegram_link_code(connection, code="111111") is None
     assert consume_telegram_link_code(connection, code="222222") == user.id
+
+
+def test_peek_telegram_link_code_does_not_burn_code() -> None:
+    connection = setup_connection()
+    user = create_mobile_user(
+        connection,
+        email="peek@example.com",
+        password_hash="hash",
+        first_name="Peek",
+        timezone="Asia/Jakarta",
+        currency="IDR",
+    )
+    create_telegram_link_code(connection, user_id=user.id, code="654321")
+
+    # Percobaan tautan yang ditolak tidak boleh menghanguskan kode.
+    assert peek_telegram_link_code(connection, code="654321") == user.id
+    assert peek_telegram_link_code(connection, code="654321") == user.id
+    assert consume_telegram_link_code(connection, code="654321") == user.id
+    assert peek_telegram_link_code(connection, code="654321") is None
