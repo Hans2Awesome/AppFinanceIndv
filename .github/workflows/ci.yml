@@ -9,6 +9,20 @@ jobs:
   python:
     name: Backend, bot and shared core
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: finance
+          POSTGRES_PASSWORD: finance
+          POSTGRES_DB: finance_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U finance -d finance_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -28,6 +42,9 @@ jobs:
       - name: Run tests
         env:
           SECRET_KEY: ci-secret-key-0123456789abcdef0123456789
+          # Without this the PostgreSQL portability tests skip, so the
+          # production database path would never be exercised in CI.
+          POSTGRES_TEST_URL: postgresql://finance:finance@127.0.0.1:5432/finance_test
         run: pytest
 
   mobile:
