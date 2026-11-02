@@ -8,7 +8,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from finance_core.db.categories import category_belongs_to
+from finance_core.db.categories import category_belongs_to, list_categories
 from finance_core.db.connection import transaction as db_transaction
 from finance_core.db.transactions import (
     DerivedTransactionError,
@@ -37,6 +37,18 @@ from ..models.schemas import (
 )
 
 router = APIRouter(prefix="/api/transactions", tags=["Transactions"])
+
+
+def _custom_categories(
+    db: sqlite3.Connection, user_id: int
+) -> list[tuple[str, str]]:
+    """Kategori kustom milik pengguna, untuk memprioritaskan quick input."""
+
+    return [
+        (category.type, category.name)
+        for category in list_categories(db, user_id=user_id)
+        if category.is_default == 0
+    ]
 
 NOT_FOUND_DETAIL = "Transaksi tidak ditemukan."
 
@@ -86,6 +98,7 @@ def create_new_transaction(
 def preview_quick_input(
     payload: QuickInputRequest,
     current_user: AppUser = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
 ) -> QuickInputPreviewResponse:
     """Parse quick input text and return a preview before saving."""
 
@@ -93,6 +106,7 @@ def preview_quick_input(
         payload.text,
         today=payload.reference_date,
         timezone=current_user.timezone,
+        custom_categories=_custom_categories(db, current_user.id),
     )
 
     if result.error:
@@ -131,6 +145,7 @@ def confirm_quick_input(
         payload.text,
         today=payload.reference_date,
         timezone=current_user.timezone,
+        custom_categories=_custom_categories(db, current_user.id),
     )
     if result.error:
         raise HTTPException(

@@ -48,14 +48,15 @@ def match_category(
     normalized_text = _normalize_text(text)
     tokens = set(normalized_text.split())
 
-    # Custom categories first: exact substring match against the user's own
-    # category names takes priority over default aliases.
+    # Custom categories first: a user's own category name wins over the default
+    # aliases. Matching is word-bounded so "Asi" does not match inside "kasir".
     if custom_categories:
         for category_type, category_name in custom_categories:
             normalized_name = _normalize_text(category_name)
             if not normalized_name:
                 continue
-            if normalized_name in tokens or normalized_name in normalized_text:
+            pattern = rf"\b{re.escape(normalized_name)}\b"
+            if re.search(pattern, normalized_text):
                 return CategoryMatch(
                     category_type,
                     category_name,

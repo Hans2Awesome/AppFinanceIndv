@@ -149,6 +149,16 @@ def _reset_sequence(target, table: str) -> None:
     )
 
 
+def _table_exists(source: sqlite3.Connection, table: str) -> bool:
+    return (
+        source.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (table,),
+        ).fetchone()
+        is not None
+    )
+
+
 def migrate(sqlite_path: Path, database_url: str, *, dry_run: bool = False) -> int:
     """Copy every table and return the number of rows written."""
 
@@ -158,26 +168,30 @@ def migrate(sqlite_path: Path, database_url: str, *, dry_run: bool = False) -> i
     source = sqlite3.connect(sqlite_path)
     source.row_factory = sqlite3.Row
 
+    # Tabel baru (misal telegram_link_codes) belum ada di database SQLite lama.
+    # Lewati, karena tabel itu memang dibuat oleh migrasi PostgreSQL, bukan data.
+    tables = [(table, columns) for table, columns in TABLES if _table_exists(source, table)]
+
     target = connect_url(database_url)
     try:
         version = run_migrations(target)
         print(f"PostgreSQL schema version: {version}")
 
         if dry_run:
-            for table, _ in TABLES:
+            for table, _ in tables:
                 count = source.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
                 print(f"{table}: {count} row(s) would be copied")
             return 0
 
         copied = 0
         with transaction(target):
-            for table, columns in TABLES:
+            for table, columns in tables:
                 rows = _copy_table(source, target, table, columns)
                 _reset_sequence(target, table)
                 copied += rows
                 print(f"{table}: {rows} row(s) copied")
 
-        for table, _ in TABLES:
+        for table, _ in tables:
             sqlite_count = source.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
             target_count = target.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
             status = "ok" if sqlite_count == target_count else "MISMATCH"

@@ -107,7 +107,7 @@ def test_postgres_api_round_trip(pg_client):
     assert listed.status_code == 200
     assert [item["id"] for item in listed.json()] == [transaction["id"]]
 
-    report = pg_client.get("/api/reports/daily", params={"date": "2026-11-02"})
+    report = pg_client.get("/api/reports/daily", params={"target_date": "2026-11-02"})
     assert report.status_code == 200, report.text
     assert report.json()["total_expense"] == 25000
 

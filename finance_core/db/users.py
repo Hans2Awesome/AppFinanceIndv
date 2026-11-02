@@ -196,11 +196,20 @@ def create_telegram_link_code(
     code: str,
     ttl_minutes: int = 10,
 ) -> str:
-    """Buat kode tautan satu pakai untuk menghubungkan akun Mobile dengan Telegram."""
+    """Buat kode tautan satu pakai untuk menghubungkan akun Mobile dengan Telegram.
+
+    Kode lama milik pengguna yang sama langsung dihapus, sehingga hanya kode
+    terbaru yang berlaku. Pemanggil wajib menangani ``IntegrityError`` bila kode
+    bertabrakan dengan kode pengguna lain.
+    """
 
     expires_at = (
         datetime.now(timezone.utc) + timedelta(minutes=ttl_minutes)
     ).strftime("%Y-%m-%d %H:%M:%S")
+    connection.execute(
+        "DELETE FROM telegram_link_codes WHERE user_id = ?",
+        (user_id,),
+    )
     connection.execute(
         """
         INSERT INTO telegram_link_codes (user_id, code, expires_at, used)
@@ -245,10 +254,14 @@ def link_telegram_account(
 ) -> AppUser:
     """Gabungkan identitas Telegram ke baris akun Mobile utama.
 
-    Jika ``telegram_user_id`` sudah terdaftar pada baris bot lain (dibuat via
-    ``/start``), semua transaksi, utang, kategori, dan jadwal berulang dipindahkan
-    ke ``user_id`` utama, baris bot dihapus, lalu ``telegram_user_id`` diisi pada
-    baris utama.
+    Hanya baris bot "murni" (tanpa ``email`` dan ``password_hash``) yang boleh
+    digabung dan dihapus. Baris dengan kredensial Mobile tidak pernah disentuh,
+    sehingga kode tautan tidak bisa dipakai untuk mengambil alih akun lain.
+    Semua ``source_key`` yang memuat id bot ikut ditulis ulang ke id pemilik,
+    supaya hapus utang/jadwal nanti tetap menemukan baris kasnya.
+
+    Raises:
+        ValueError: bila Telegram sudah terhubung ke akun Mobile lain.
     """
 
     connection.row_factory = sqlite3.Row
@@ -256,6 +269,9 @@ def link_telegram_account(
     # Cek apakah telegram_user_id sudah digunakan oleh baris lain (biasanya bot).
     bot_user = get_user_by_telegram_id(connection, telegram_user_id)
     if bot_user is not None and bot_user.id != user_id:
+        if bot_user.email is not None or bot_user.password_hash is not None:
+            raise ValueError("Telegram ini sudah terhubung ke akun lain.")
+
         bot_id = bot_user.id
 
         # Petakan kategori bot ke kategori owner yang setara (type + name),
@@ -296,8 +312,15 @@ def link_telegram_account(
             )
 
         # Pindahkan semua data milik bot ke akun utama, lalu hapus kategori bot.
+        # ``source_key`` memuat user id, jadi harus ditulis ulang: kalau tidak,
+        # hapus utang/jadwal nanti tidak menemukan baris kasnya lagi.
         connection.execute(
-            "UPDATE transactions SET user_id = ? WHERE user_id = ?", (user_id, bot_id)
+            """
+            UPDATE transactions
+            SET user_id = ?, source_key = REPLACE(source_key, ?, ?)
+            WHERE user_id = ?
+            """,
+            (user_id, f":{bot_id}:", f":{user_id}:", bot_id),
         )
         connection.execute(
             "UPDATE debts SET user_id = ? WHERE user_id = ?", (user_id, bot_id)

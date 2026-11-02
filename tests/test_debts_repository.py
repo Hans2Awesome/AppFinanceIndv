@@ -11,6 +11,7 @@ from finance_core.db.debts import (
     delete_debt_payment,
     get_debt_by_id,
     sync_derived_debt_transaction,
+    update_debt,
 )
 from finance_core.db.migrations import init_db
 from finance_core.db.transactions import create_transaction
@@ -151,3 +152,33 @@ def test_delete_debt_payment_reverts_settled_status() -> None:
     assert reverted is not None
     assert reverted.paid_amount == 0
     assert reverted.status == "active"
+
+
+def test_update_debt_keeps_status_consistent_with_amounts() -> None:
+    connection = setup_connection()
+    debt = create_debt(
+        connection,
+        user_id=1,
+        type="debt",
+        person_name="Andi",
+        total_amount=100_000,
+    )
+    # Lunasi penuh.
+    connection.execute(
+        "UPDATE debts SET paid_amount = 100000, status = 'settled' WHERE id = ?",
+        (debt.id,),
+    )
+
+    # Naikkan total: status tidak boleh tetap "settled" saat masih ada sisa.
+    raised = update_debt(
+        connection, user_id=1, debt_id=debt.id, total_amount=200_000
+    )
+    assert raised is not None
+    assert raised.status == "active"
+
+    # Turunkan kembali ke paid_amount: status kembali "settled".
+    lowered = update_debt(
+        connection, user_id=1, debt_id=debt.id, total_amount=100_000
+    )
+    assert lowered is not None
+    assert lowered.status == "settled"

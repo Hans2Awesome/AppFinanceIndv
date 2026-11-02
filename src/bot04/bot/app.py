@@ -507,6 +507,9 @@ async def _link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             user_id=owner_user_id,
             telegram_user_id=user.id,
         )
+    except ValueError:
+        await message.reply_text("Telegram ini sudah terhubung ke akun lain.")
+        return
     except sqlite3.IntegrityError:
         await message.reply_text("Telegram ini sudah terhubung ke akun lain.")
         return

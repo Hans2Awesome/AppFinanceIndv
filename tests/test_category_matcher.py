@@ -120,3 +120,17 @@ def test_match_category_without_custom_uses_default() -> None:
         confidence=1.0,
         needs_review=False,
     )
+
+
+def test_match_category_custom_name_is_word_bounded() -> None:
+    # "Asi" tidak boleh cocok di dalam kata "kasir".
+    assert match_category(
+        "kasir 20000",
+        custom_categories=[("expense", "Asi")],
+    ) == CategoryMatch(
+        "expense",
+        "Lainnya",
+        asset_name=None,
+        confidence=0.0,
+        needs_review=True,
+    )

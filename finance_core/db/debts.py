@@ -189,6 +189,16 @@ def update_debt(
     new_due = due_date if due_date is not None else current.due_date
     new_status = status if status is not None else current.status
 
+    # Status harus konsisten dengan nominal: baris yang sudah lunas tidak boleh
+    # tetap "settled" ketika total dinaikkan melebihi paid_amount, karena sisa
+    # utangnya jadi tidak pernah ditagih.
+    if new_status == "settled" and current.paid_amount < new_total:
+        new_status = status if status is not None else "active"
+        if new_status == "settled":
+            new_status = "active"
+    elif current.paid_amount >= new_total and new_status == "active":
+        new_status = "settled"
+
     connection.execute(
         """
         UPDATE debts

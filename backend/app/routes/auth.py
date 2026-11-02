@@ -199,10 +199,21 @@ def create_telegram_link_token(
     """Buat kode tautan 6 digit untuk menghubungkan akun ini dengan Bot Telegram.
 
     Kode berlaku 10 menit dan boleh digunakan satu kali. Pengguna mengirimkannya
-    ke Bot Telegram dengan perintah ``/link <kode>``.
+    ke Bot Telegram dengan perintah ``/link <kode>``. Hanya kode terbaru yang
+    berlaku: membuat kode baru membatalkan kode sebelumnya.
     """
 
-    code = f"{secrets.randbelow(1_000_000):06d}"
-    with db_transaction(db):
-        create_telegram_link_code(db, user_id=current_user.id, code=code)
-    return {"code": code, "expires_in_minutes": 10}
+    for _ in range(5):
+        code = f"{secrets.randbelow(1_000_000):06d}"
+        try:
+            with db_transaction(db):
+                create_telegram_link_code(db, user_id=current_user.id, code=code)
+        except sqlite3.IntegrityError:
+            # Kode sudah dipakai pengguna lain; coba kode acak berikutnya.
+            continue
+        return {"code": code, "expires_in_minutes": 10}
+
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Gagal membuat kode tautan. Coba lagi.",
+    )
