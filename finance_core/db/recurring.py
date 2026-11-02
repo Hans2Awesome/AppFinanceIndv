@@ -10,7 +10,7 @@ from datetime import date
 from finance_core.recurring import next_after
 from finance_core.timezones import today_in
 
-from .connection import transaction
+from .connection import is_postgres, transaction
 from .transactions import create_transaction
 
 logger = logging.getLogger(__name__)
@@ -268,6 +268,18 @@ def run_due_recurring(
         schedule_runs: list[RecurringRun] = []
         try:
             with transaction(connection):
+                # Kunci baris jadwal: dua worker API tidak boleh sama-sama
+                # membaca next_run_date yang sama lalu memajukannya dua kali.
+                locked = connection.execute(
+                    """
+                    SELECT next_run_date FROM recurring_transactions
+                    WHERE id = ?
+                    """ + (" FOR UPDATE" if is_postgres(connection) else ""),
+                    (row["id"],),
+                ).fetchone()
+                if locked is not None and locked["next_run_date"] != row["next_run_date"]:
+                    # Worker lain sudah memproses jadwal ini lebih dulu.
+                    continue
                 while due <= today and processed_for_schedule < MAX_OCCURRENCES_PER_RUN:
                     processed_for_schedule += 1
                     source_key = f"recurring:{row['user_id']}:{row['id']}:{due.isoformat()}"
