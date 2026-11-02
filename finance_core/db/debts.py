@@ -176,7 +176,9 @@ def update_debt(
     status: str | None = None,
 ) -> Debt | None:
     """Update editable fields for an owned debt."""
-    current = get_debt_by_id(connection, user_id=user_id, debt_id=debt_id)
+    current = get_debt_by_id(
+        connection, user_id=user_id, debt_id=debt_id, for_update=True
+    )
     if current is None:
         return None
 
@@ -288,7 +290,9 @@ def delete_debt_payment(
 
     connection.row_factory = sqlite3.Row
 
-    debt = get_debt_by_id(connection, user_id=user_id, debt_id=debt_id)
+    debt = get_debt_by_id(
+        connection, user_id=user_id, debt_id=debt_id, for_update=True
+    )
     if debt is None:
         return None
 
