@@ -103,3 +103,13 @@ Thumbs.db
 tmp/
 temp/
 
+# ============================
+# Private notes (never pushed)
+# ============================
+# Catatan lokal, jawaban diskusi, dan dokumen kerja yang tidak boleh ikut
+# ke GitHub. Taruh di notes/ supaya rapi dan tetap terabaikan.
+notes/
+
+# Database dumps contain real user data. Never commit them.
+backups/
+
