@@ -13,7 +13,7 @@ from __future__ import annotations
 import re
 import sqlite3
 import threading
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any
 
@@ -31,8 +31,18 @@ _CURRENT_TIMESTAMP = "CURRENT_TIMESTAMP"
 _INSERT_OR_IGNORE = re.compile(r"INSERT\s+OR\s+IGNORE\s+INTO", re.IGNORECASE)
 
 
-class Row(Mapping[str, Any]):
-    """Row with both name and position access, like ``sqlite3.Row``."""
+class Row:
+    """Row with both name and position access, like ``sqlite3.Row``.
+
+    Deliberately not a :class:`collections.abc.Mapping`. ``sqlite3.Row``
+    iterates over its *values*, so ``tuple(row)`` and unpacking yield column
+    values. Inheriting Mapping would iterate over keys instead and silently
+    change every ``tuple(row)`` call site, such as the data migration copying
+    rows into PostgreSQL.
+
+    ``dict(row)`` still works because it accepts any object with ``keys()``
+    and ``__getitem__``.
+    """
 
     __slots__ = ("_names", "_values", "_positions")
 
@@ -41,7 +51,7 @@ class Row(Mapping[str, Any]):
         self._values = tuple(values)
         self._positions = {name: index for index, name in enumerate(self._names)}
 
-    def keys(self) -> list[str]:  # type: ignore[override]
+    def keys(self) -> list[str]:
         return list(self._names)
 
     def __getitem__(self, key: str | int) -> Any:
@@ -49,8 +59,8 @@ class Row(Mapping[str, Any]):
             return self._values[self._positions[key]]
         return self._values[key]
 
-    def __iter__(self) -> Iterator[str]:
-        return iter(self._names)
+    def __iter__(self) -> Iterator[Any]:
+        return iter(self._values)
 
     def __len__(self) -> int:
         return len(self._names)

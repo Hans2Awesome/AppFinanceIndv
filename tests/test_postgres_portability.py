@@ -237,3 +237,46 @@ def test_postgres_derived_cash_rows_are_locked_and_cleaned_up(pg_client):
 
     remaining = [item["id"] for item in pg_client.get("/api/transactions").json()]
     assert remaining == [manual["id"]]
+
+
+def test_row_iterates_over_values_like_sqlite_row(postgres_url) -> None:
+    """``tuple(row)`` must yield values, not column names.
+
+    The data migration copies rows with ``[tuple(row) for row in rows]``. When
+    Row inherited Mapping it iterated over keys, so the migration would have
+    inserted column names as data on any non-empty table.
+    """
+
+    import sqlite3
+
+    from finance_core.db.connection import close_pools, connect_url
+
+    connection = connect_url(postgres_url)
+    try:
+        connection.execute(
+            "CREATE TEMP TABLE row_parity (a INTEGER, b TEXT) ON COMMIT DROP"
+        )
+        connection.execute("INSERT INTO row_parity (a, b) VALUES (?, ?)", (7, "tujuh"))
+        pg_row = connection.execute("SELECT a, b FROM row_parity").fetchone()
+    finally:
+        connection.close()
+        close_pools()
+
+    sqlite_connection = sqlite3.connect(":memory:")
+    sqlite_connection.row_factory = sqlite3.Row
+    sqlite_connection.execute("CREATE TABLE row_parity (a INTEGER, b TEXT)")
+    sqlite_connection.execute("INSERT INTO row_parity (a, b) VALUES (7, 'tujuh')")
+    lite_row = sqlite_connection.execute("SELECT a, b FROM row_parity").fetchone()
+    sqlite_connection.close()
+
+    assert tuple(pg_row) == tuple(lite_row) == (7, "tujuh")
+    assert list(pg_row) == list(lite_row) == [7, "tujuh"]
+    assert dict(pg_row) == dict(lite_row) == {"a": 7, "b": "tujuh"}
+    assert pg_row["a"] == lite_row["a"] == 7
+    assert pg_row[0] == lite_row[0] == 7
+    assert pg_row[0:2] == lite_row[0:2] == (7, "tujuh")
+    assert len(pg_row) == len(lite_row) == 2
+    assert pg_row.keys() == lite_row.keys() == ["a", "b"]
+    # sqlite3.Row membership tests values, not names.
+    assert (7 in pg_row) is (7 in lite_row) is True
+    assert ("a" in pg_row) is ("a" in lite_row) is False

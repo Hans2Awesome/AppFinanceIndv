@@ -143,6 +143,11 @@ History commands page through transactions **10 data per halaman**, ordered
 
 Other commands: `/today`, `/week`, `/month`, `/report`, `/help`.
 
+Link a Telegram account to a mobile account: request a code in the app
+(Settings), then send `/link <code>` to the bot. Only the newest code per user
+is valid. Send `/unlink` to detach Telegram again; the financial data stays.
+A bot-only account (no email) cannot unlink, because it has no mobile account.
+
 Dry run (loads config, does not poll Telegram):
 
 ```bash
@@ -190,6 +195,8 @@ cd mobile && npx tsc --noEmit
 | `POST` | `/api/auth/refresh` | Exchange a refresh token for a new pair |
 | `POST` | `/api/auth/logout` | Revoke every token issued to the user |
 | `GET` | `/api/auth/me` | Current profile |
+| `POST` | `/api/auth/telegram-link-token` | Issue a 6-digit code for `/link` in the bot |
+| `DELETE` | `/api/auth/telegram-link` | Unlink Telegram, keeping all financial data |
 | `GET/POST` | `/api/transactions` | List / create transactions |
 | `PUT/DELETE` | `/api/transactions/{id}` | Update / delete |
 | `POST` | `/api/transactions/quick-input` | Parse free text into a preview |

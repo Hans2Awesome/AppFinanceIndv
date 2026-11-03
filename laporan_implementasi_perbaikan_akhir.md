@@ -14,13 +14,13 @@ tes. Semua temuan sudah diperbaiki, dites, dan di-push ke `origin/main`.
 
 | Item | Judul | Status | Bukti utama |
 | :--- | :--- | :--- | :--- |
-| F1 | Siklus koneksi bot + health check pool | Selesai | `finance_core/db/connection.py:287,289`; `src/bot04/bot/app.py:681` |
-| F2 | Cegah race condition double-submit cicilan | Selesai | `finance_core/db/debts.py:126,385` |
+| F1 | Siklus koneksi bot + health check pool | Selesai | `finance_core/db/connection.py:297,299`; `src/bot04/bot/app.py:710` |
+| F2 | Cegah race condition double-submit cicilan | Selesai | `finance_core/db/debts.py:126,372` |
 | F3 | Sinkron kas saat edit utang + hapus cicilan | Selesai | `backend/app/routes/debts.py:254,331` |
-| F4 | Account linking Mobile ke Telegram | Selesai | `backend/app/routes/auth.py:194`; `src/bot04/bot/app.py:485` |
+| F4 | Account linking Mobile ke Telegram | Selesai | `backend/app/routes/auth.py:195`; `src/bot04/bot/app.py:498` |
 | F5 | Batas memori rate limiter | Selesai | `backend/app/auth/rate_limit.py:16,52` |
 | F6 | Prioritas kategori kustom pada matcher | Selesai | `finance_core/services/category_matcher.py:53` |
-| P3.1 | Konfigurasi port Supabase + prepared statement | Selesai | `finance_core/db/connection.py:293`; `.env.example:8` |
+| P3.1 | Konfigurasi port Supabase + prepared statement | Selesai | `finance_core/db/connection.py:303`; `.env.example:8` |
 | P3.2 | Urutan eksekusi deploy | Selesai | `docs/deploy-supabase.md` |
 | P3.3 | Backup berkala | Selesai | `scripts/backup_postgres.sh` |
 
@@ -37,11 +37,11 @@ koneksi basi ke Supabase diganti otomatis.
 
 1. `ConnectionPool` dibuat dengan `max_idle=300` dan
    `check=ConnectionPool.check_connection`
-   (`finance_core/db/connection.py:285-289`). Koneksi menganggur lebih dari 5
+   (`finance_core/db/connection.py:295-303`). Koneksi menganggur lebih dari 5
    menit, atau yang sudah mati di sisi Supabase, dibuang saat diambil lagi.
 2. Setiap pesan masuk membuka koneksi sendiri lewat `open_database()` di
    `_with_db_transaction` dan menutupnya di `finally`
-   (`src/bot04/bot/app.py:681`). `bot_data` tidak lagi menyimpan koneksi.
+   (`src/bot04/bot/app.py:710`). `bot_data` tidak lagi menyimpan koneksi.
 3. SQLite memakai `check_same_thread=False` khusus bot, karena handler
    berjalan di thread lain lewat `asyncio.to_thread`.
 
@@ -58,8 +58,8 @@ PostgreSQL.
 1. `get_debt_by_id(..., for_update=True)` menambahkan klausa `FOR UPDATE` hanya
    saat koneksi PostgreSQL (`finance_core/db/debts.py:126`). SQLite tidak
    mendukung baris lock, jadi flag diabaikan.
-2. Dipakai oleh `create_debt_payment` (`debts.py:385`), `delete_debt_payment`
-   (`debts.py:294`), dan `update_debt` (`debts.py:180`).
+2. Dipakai oleh `create_debt_payment` (`debts.py:372`), `delete_debt_payment`
+   (`debts.py:278`), dan `update_debt` (`debts.py:167`).
 
 **Catatan penting:** awalnya hanya `create_debt_payment` yang memakai lock. Dua
 jalur lain membaca `paid_amount` lalu menulis balik hasil hitungan, jadi dua
@@ -100,20 +100,20 @@ perintah `/link <kode>` di bot untuk menggabungkan `telegram_user_id` ke baris
 1. Tabel `telegram_link_codes` (migrasi SQLite v4 dan PostgreSQL). Dipakai
    karena API dan bot adalah dua proses terpisah, jadi kode tidak bisa disimpan
    di memori proses API.
-2. `POST /api/auth/telegram-link-token` (`backend/app/routes/auth.py:194`):
+2. `POST /api/auth/telegram-link-token` (`backend/app/routes/auth.py:195`):
    - kode 6 digit acak dengan `secrets`;
    - retry sampai 5 kali bila kode bertabrakan, lalu `503`;
    - membuat kode baru menghapus kode lama milik pengguna yang sama, jadi hanya
      kode terbaru yang berlaku.
-3. `/link <kode>` di bot (`src/bot04/bot/app.py:485`):
+3. `/link <kode>` di bot (`src/bot04/bot/app.py:498`):
    - `peek_telegram_link_code` memeriksa kode tanpa menghanguskannya
-     (`finance_core/db/users.py:229`);
-   - `link_telegram_account` menggabungkan akun (`users.py:281`);
+     (`finance_core/db/users.py:237`);
+   - `link_telegram_account` menggabungkan akun (`users.py:289`);
    - kode baru dihanguskan setelah penggabungan berhasil.
 4. Penggabungan memindahkan transaksi, utang, dan jadwal berulang; memetakan
    kategori bot ke kategori pemilik; lalu menghapus baris bot.
 5. `source_key` yang memuat id bot ditulis ulang ke id pemilik
-   (`users.py:352`). Tanpa ini, hapus utang setelah linking tidak menemukan
+   (`users.py:373`). Tanpa ini, hapus utang setelah linking tidak menemukan
    baris kasnya dan meninggalkan baris yatim.
 6. Mobile punya UI-nya di Pengaturan: tombol minta kode, lalu panduan mengirim
    `/link <kode>` ke Bot04 (`mobile/app/(tabs)/settings.tsx`). Status
@@ -166,7 +166,7 @@ untuk pengguna mobile sampai diperbaiki.
 1. API dan bot memakai transaction pooler port `6543`, didokumentasikan di
    `.env.example:8` dan `README.md`.
 2. `prepare_threshold: None` diset pada argumen koneksi
-   (`finance_core/db/connection.py:293`), karena transaction pooler tidak
+   (`finance_core/db/connection.py:303`), karena transaction pooler tidak
    mendukung prepared statements lintas transaksi.
 3. Skrip migrasi memakai direct/session DSN port `5432`, karena DDL dan
    penyalinan data harus satu sesi utuh (`docs/deploy-supabase.md:38-48`,
@@ -210,8 +210,8 @@ sudah diperbaiki dan punya tes regresi.
 | # | Temuan | Dampak | Perbaikan |
 | :--- | :--- | :--- | :--- |
 | 1 | Kode link bisa mengambil alih akun Mobile berkredensial | Account hijack | Tolak merge bila baris target punya kredensial (`users.py:305`) |
-| 2 | `source_key` tidak di-rebase saat merge | Baris kas yatim setelah hapus utang | `REPLACE(source_key, ':bot:', ':owner:')` (`users.py:352`) |
-| 3 | Kode lama tetap valid setelah buat kode baru | Dua kode aktif sekaligus | Hapus kode lama per pengguna (`users.py:216`) |
+| 2 | `source_key` tidak di-rebase saat merge | Baris kas yatim setelah hapus utang | `REPLACE(source_key, ':bot:', ':owner:')` (`users.py:373`) |
+| 3 | Kode lama tetap valid setelah buat kode baru | Dua kode aktif sekaligus | Hapus kode lama per pengguna (`users.py:220`) |
 | 4 | Kode hangus walau linking ditolak | Pengguna harus minta kode baru | `peek_telegram_link_code` sebelum merge (`users.py:229`) |
 | 5 | Tabrakan kode acak memicu error 500 | Endpoint gagal total | Retry 5 kali, lalu `503` (`auth.py:206`) |
 | 6 | `Asi` cocok di dalam `kasir` | Kategori salah | Pencocokan word-boundary (`category_matcher.py:59`) |

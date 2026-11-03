@@ -2,9 +2,9 @@
 
 ## What it is
 
-Personal finance tracker for Indonesian users. One FastAPI + SQLite backend,
-three clients: Expo mobile app, Telegram bot, REST API. This document covers the
-mobile app only.
+Personal finance tracker for Indonesian users. One FastAPI backend on
+PostgreSQL (SQLite for local development), three clients: Expo mobile app,
+Telegram bot, REST API. This document covers the mobile app only.
 
 ## Who uses it
 
