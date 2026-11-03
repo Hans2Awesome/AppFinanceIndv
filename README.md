@@ -97,7 +97,9 @@ SQLite and is safe to re-run: ids that already exist are skipped.
 
 5. Restart the API first, then the bot. Both read `DATABASE_URL`, so they share
    one database. `docs/deploy-supabase.md` has the full go-live order and the
-   rollback steps.
+   rollback steps. To move an existing PostgreSQL database to another Supabase
+   project (for example after changing region), use
+   `docs/pindah-database-supabase.md` and `scripts/copy_postgres_database.sh`.
 
 Notes:
 
