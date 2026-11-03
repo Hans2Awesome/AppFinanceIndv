@@ -15,6 +15,7 @@ from finance_core.db.users import (
     create_telegram_link_code,
     get_user_by_email,
     get_user_by_id,
+    unlink_telegram_account,
 )
 
 from ..auth.client_ip import client_ip
@@ -217,3 +218,20 @@ def create_telegram_link_token(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
         detail="Gagal membuat kode tautan. Coba lagi.",
     )
+
+
+@router.delete("/telegram-link", status_code=status.HTTP_200_OK)
+def remove_telegram_link(
+    current_user: AppUser = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+) -> dict[str, bool]:
+    """Lepas tautan Telegram dari akun ini tanpa menghapus datanya.
+
+    Dipakai ketika pengguna berganti nomor atau akun Telegram. Data keuangan
+    tetap utuh; hanya ``telegram_user_id`` yang dikosongkan. Setelah ini
+    pengguna bisa meminta kode baru dan menautkan akun Telegram lain.
+    """
+
+    with db_transaction(db):
+        unlink_telegram_account(db, user_id=current_user.id)
+    return {"telegram_linked": False}

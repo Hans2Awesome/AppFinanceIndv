@@ -3,18 +3,29 @@
 #
 # Usage:
 #   DATABASE_URL="postgresql://..." ./scripts/backup_postgres.sh
+#   DIRECT_DATABASE_URL="postgresql://...:5432/..." ./scripts/backup_postgres.sh
 #   BACKUP_DIR=/var/backups/finance RETENTION_DAYS=30 ./scripts/backup_postgres.sh
 #
 # Writes a gzip-compressed pg_dump into BACKUP_DIR and removes dumps older than
-# RETENTION_DAYS. Exit code is non-zero when DATABASE_URL is missing, pg_dump
-# fails, or the dump is empty, so cron can report the failure.
+# RETENTION_DAYS. Exit code is non-zero when the dump fails or produces an empty
+# archive, so cron can report the failure.
+#
+# Port matters: the API and bot use the transaction pooler (port 6543), but
+# pg_dump needs a single session for a consistent snapshot and table locks. Set
+# DIRECT_DATABASE_URL (port 5432) and this script prefers it over DATABASE_URL.
 #
 # Cron example (every Sunday at 03:00):
-#   0 3 * * 0 DATABASE_URL="postgresql://..." /path/to/scripts/backup_postgres.sh
+#   0 3 * * 0 DATABASE_URL="postgresql://..." DIRECT_DATABASE_URL="postgresql://...:5432/..." \
+#       /path/to/scripts/backup_postgres.sh >> /var/log/finance-backup.log 2>&1
 
 set -euo pipefail
 
-: "${DATABASE_URL:?DATABASE_URL is required}"
+BACKUP_URL="${DIRECT_DATABASE_URL:-${DATABASE_URL:-}}"
+if [ -z "$BACKUP_URL" ]; then
+    echo "DATABASE_URL (or DIRECT_DATABASE_URL) is required." >&2
+    exit 1
+fi
+
 BACKUP_DIR="${BACKUP_DIR:-./backups}"
 RETENTION_DAYS="${RETENTION_DAYS:-30}"
 
@@ -25,15 +36,29 @@ fi
 
 mkdir -p "$BACKUP_DIR"
 target="${BACKUP_DIR}/finance_$(date +%F).sql.gz"
+partial="${target}.part"
+
+# Write to a temp file first, so a failed dump never leaves a half-written
+# archive under the final name.
+cleanup() {
+    rm -f "$partial"
+}
+trap cleanup EXIT
 
 # --no-owner keeps the dump restorable into a different role or project.
-pg_dump "$DATABASE_URL" --no-owner --format=plain | gzip > "$target"
-
-if [ ! -s "$target" ]; then
-    echo "Backup failed: $target is empty." >&2
+if ! pg_dump "$BACKUP_URL" --no-owner --format=plain | gzip > "$partial"; then
+    echo "Backup failed: pg_dump returned a non-zero exit code." >&2
     exit 1
 fi
 
+# gzip always emits a valid ~20 byte header/trailer, so a non-zero size alone
+# does not prove the dump contains data. Require real SQL output as well.
+if [ ! -s "$partial" ] || ! gzip -dc "$partial" | grep -q .; then
+    echo "Backup failed: dump is empty." >&2
+    exit 1
+fi
+
+mv "$partial" "$target"
 echo "Backup written: $target"
 
 find "$BACKUP_DIR" -name 'finance_*.sql.gz' -type f -mtime "+${RETENTION_DAYS}" -delete

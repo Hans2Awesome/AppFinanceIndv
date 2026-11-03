@@ -116,3 +116,47 @@ def test_profile_reports_telegram_link_state(client):
     me = client.get("/api/auth/me", headers=headers)
     assert me.status_code == 200
     assert me.json()["telegram_linked"] is False
+
+
+def test_telegram_link_can_be_removed_without_losing_data(client):
+    registered = client.post(
+        "/api/auth/register",
+        json={"email": "unlink@example.com", "password": "password123"},
+    )
+    user_id = registered.json()["user"]["id"]
+    headers = {"Authorization": f"Bearer {registered.json()['access_token']}"}
+
+    client.post(
+        "/api/transactions",
+        json={
+            "type": "expense",
+            "category_name": "Makan & Minum",
+            "amount": 15000,
+            "transaction_date": "2026-11-02",
+        },
+        headers=headers,
+    )
+
+    import os
+
+    from finance_core.db.connection import open_database
+    from finance_core.db.users import link_telegram_account
+
+    connection = open_database(os.environ["DATABASE_PATH"])
+    try:
+        link_telegram_account(connection, user_id=user_id, telegram_user_id=31337)
+        connection.commit()
+    finally:
+        connection.close()
+
+    assert client.get("/api/auth/me", headers=headers).json()["telegram_linked"] is True
+
+    removed = client.delete("/api/auth/telegram-link", headers=headers)
+    assert removed.status_code == 200
+    assert removed.json() == {"telegram_linked": False}
+
+    me = client.get("/api/auth/me", headers=headers).json()
+    assert me["telegram_linked"] is False
+
+    listed = client.get("/api/transactions", headers=headers).json()
+    assert len(listed) == 1

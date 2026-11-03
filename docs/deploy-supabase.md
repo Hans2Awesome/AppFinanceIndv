@@ -71,18 +71,30 @@ jadi ia aman dijalankan setelah API sehat.
 1. Login web/Android dengan akun lama, cek riwayat transaksi.
 2. Kirim satu pesan ke bot, pastikan transaksi muncul di aplikasi setelah
    akun ditautkan lewat `/link <kode>`.
-3. Cek `SELECT COUNT(*)` pada `transactions`, `debts`, dan `debt_payments`
-   dibanding angka dari SQLite.
+3. Cek `SELECT COUNT(*)` pada `users`, `categories`, `transactions`, `debts`,
+   `debt_payments`, dan `recurring_transactions` dibanding angka dari SQLite.
+   Skrip migrasi sudah mencetak baris `verify <tabel>`; semua harus `ok`.
+4. Pastikan `systemctl restart finance-api` tidak meninggalkan koneksi
+   menggantung di dashboard Supabase; pool ditutup di akhir lifespan.
 
 ## 8. Backup mingguan
 
 ```bash
 chmod +x scripts/backup_postgres.sh
-0 3 * * 0 DATABASE_URL="postgresql://..." /path/to/scripts/backup_postgres.sh >> /var/log/finance-backup.log 2>&1
+0 3 * * 0 DATABASE_URL="postgresql://...:6543/..." DIRECT_DATABASE_URL="postgresql://...:5432/..." /path/to/scripts/backup_postgres.sh >> /var/log/finance-backup.log 2>&1
 ```
 
 Skrip menulis `backups/finance_YYYY-MM-DD.sql.gz` dan menghapus dump lebih tua
 dari `RETENTION_DAYS` (default 30 hari).
+
+Set `DIRECT_DATABASE_URL` (port `5432`). `pg_dump` butuh satu sesi utuh untuk
+snapshot yang konsisten dan lock tabel; transaction pooler (`6543`) tidak
+menjamin itu. Skrip memakai `DIRECT_DATABASE_URL` bila ada, dan baru jatuh ke
+`DATABASE_URL` bila tidak.
+
+Dump ditulis ke `<nama>.part` lebih dulu. Bila `pg_dump` gagal, atau hasilnya
+tidak berisi SQL, skrip hapus file sementara itu dan keluar dengan kode error,
+jadi cron tidak pernah meninggalkan arsip kosong berukuran ~20 byte.
 
 ## Rollback
 

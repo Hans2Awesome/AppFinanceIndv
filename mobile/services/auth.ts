@@ -32,6 +32,10 @@ export const authApi = {
     return res.data;
   },
 
+  async unlinkTelegram(): Promise<void> {
+    await api.delete('/api/auth/telegram-link');
+  },
+
   async logout(): Promise<void> {
     try {
       await api.post('/api/auth/logout');

@@ -212,6 +212,14 @@ def create_telegram_link_code(
     expires_at = (
         datetime.now(timezone.utc) + timedelta(minutes=ttl_minutes)
     ).strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    # Buang kode kedaluwarsa milik siapa pun, supaya tabel tidak menumpuk
+    # baris dari pengguna yang minta kode tapi tidak pernah mengirimkannya
+    # ke bot. Kode kedaluwarsa sudah tidak bisa dipakai, jadi aman dihapus.
+    connection.execute(
+        "DELETE FROM telegram_link_codes WHERE expires_at < ?",
+        (now,),
+    )
     connection.execute(
         "DELETE FROM telegram_link_codes WHERE user_id = ?",
         (user_id,),
@@ -346,13 +354,60 @@ def link_telegram_account(
         # Pindahkan semua data milik bot ke akun utama, lalu hapus kategori bot.
         # ``source_key`` memuat user id, jadi harus ditulis ulang: kalau tidak,
         # hapus utang/jadwal nanti tidak menemukan baris kasnya lagi.
+        #
+        # Penggantian dikunci per prefix (``debt:``, ``debt_payment:``,
+        # ``recurring:``). Pola lama ``":<bot_id>:"`` bisa ikut mengganti id
+        # jadwal atau id pembayaran yang kebetulan angkanya sama dengan id bot,
+        # misalnya ``recurring:2:2:2026-11-02`` menjadi ``recurring:1:1:...``.
+        #
+        # ``source_key`` punya indeks unik, jadi baris kas bot yang kuncinya
+        # sudah dipakai pemilik (data hasil restore manual, misalnya) dibuang
+        # dulu. Baris kas bersifat turunan: yang dipertahankan adalah milik
+        # pemilik, bukan duplikat dari baris bot.
+        for prefix in ("debt", "debt_payment", "recurring"):
+            connection.execute(
+                """
+                DELETE FROM transactions
+                WHERE user_id = ?
+                  AND source_key LIKE ?
+                  AND REPLACE(source_key, ?, ?) IN (
+                      SELECT source_key FROM transactions
+                      WHERE user_id = ? AND source_key IS NOT NULL
+                  )
+                """,
+                (
+                    bot_id,
+                    f"{prefix}:{bot_id}:%",
+                    f"{prefix}:{bot_id}:",
+                    f"{prefix}:{user_id}:",
+                    user_id,
+                ),
+            )
+            connection.execute(
+                """
+                UPDATE transactions
+                SET user_id = ?, source_key = REPLACE(source_key, ?, ?)
+                WHERE user_id = ? AND source_key LIKE ?
+                """,
+                (
+                    user_id,
+                    f"{prefix}:{bot_id}:",
+                    f"{prefix}:{user_id}:",
+                    bot_id,
+                    f"{prefix}:{bot_id}:%",
+                ),
+            )
+        # Sisa transaksi bot tanpa ``source_key`` (input manual, misalnya) tetap
+        # ikut pindah. Tanpa baris ini, transaksi biasa akan tertinggal.
         connection.execute(
             """
             UPDATE transactions
-            SET user_id = ?, source_key = REPLACE(source_key, ?, ?)
-            WHERE user_id = ?
+            SET user_id = ?
+            WHERE user_id = ? AND (source_key IS NULL OR source_key NOT LIKE 'debt:%'
+                                   AND source_key NOT LIKE 'debt_payment:%'
+                                   AND source_key NOT LIKE 'recurring:%')
             """,
-            (user_id, f":{bot_id}:", f":{user_id}:", bot_id),
+            (user_id, bot_id),
         )
         connection.execute(
             "UPDATE debts SET user_id = ? WHERE user_id = ?", (user_id, bot_id)
@@ -372,6 +427,37 @@ def link_telegram_account(
         WHERE id = ?
         """,
         (telegram_user_id, user_id),
+    )
+    return get_user_by_id(connection, user_id)
+
+
+def unlink_telegram_account(
+    connection: sqlite3.Connection,
+    *,
+    user_id: int,
+) -> AppUser | None:
+    """Lepas tautan Telegram dari akun Mobile tanpa menyentuh datanya.
+
+    Semua transaksi, utang, dan jadwal tetap milik akun ini. Hanya
+    ``telegram_user_id`` yang dikosongkan, sehingga pengguna bisa menautkan
+    akun Telegram baru lewat kode tautan. Kode yang belum terpakai ikut dihapus
+    agar tidak bisa dipakai setelah tautan dilepas.
+
+    Mengembalikan None bila akun tidak ditemukan.
+    """
+
+    connection.row_factory = sqlite3.Row
+    current = get_user_by_id(connection, user_id)
+    if current is None:
+        return None
+
+    connection.execute(
+        "DELETE FROM telegram_link_codes WHERE user_id = ?",
+        (user_id,),
+    )
+    connection.execute(
+        "UPDATE users SET telegram_user_id = NULL WHERE id = ?",
+        (user_id,),
     )
     return get_user_by_id(connection, user_id)
 

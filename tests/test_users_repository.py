@@ -15,6 +15,7 @@ from finance_core.db.users import (
     get_or_create_user,
     link_telegram_account,
     peek_telegram_link_code,
+    unlink_telegram_account,
 )
 
 
@@ -258,3 +259,160 @@ def test_peek_telegram_link_code_does_not_burn_code() -> None:
     assert peek_telegram_link_code(connection, code="654321") == user.id
     assert consume_telegram_link_code(connection, code="654321") == user.id
     assert peek_telegram_link_code(connection, code="654321") is None
+
+
+def test_link_rebases_each_prefix_without_touching_schedule_ids() -> None:
+    connection = setup_connection()
+    mobile = create_mobile_user(
+        connection,
+        email="prefix@example.com",
+        password_hash="hash",
+        first_name="Prefix",
+        timezone="Asia/Jakarta",
+        currency="IDR",
+    )
+    bot_user = get_or_create_user(
+        connection,
+        telegram_user_id=555777,
+        first_name="Bot",
+        timezone="Asia/Jakarta",
+        currency="IDR",
+    )
+
+    # schedule_id sama dengan bot id: pola lama ":<bot>:" akan merusak id ini.
+    bot_id = bot_user.id
+    keys = [
+        f"recurring:{bot_id}:{bot_id}:2026-11-02",
+        f"recurring:{bot_id}:22:2026-11-02",
+        f"debt:{bot_id}:{bot_id}",
+        f"debt_payment:{bot_id}:{bot_id}",
+    ]
+    for key in keys:
+        connection.execute(
+            "INSERT INTO transactions (user_id, type, amount, transaction_date, source_key) "
+            "VALUES (?, 'income', 1000, '2026-11-02', ?)",
+            (bot_id, key),
+        )
+
+    link_telegram_account(connection, user_id=mobile.id, telegram_user_id=555777)
+
+    rebased = [
+        row[0]
+        for row in connection.execute(
+            "SELECT source_key FROM transactions WHERE user_id = ? ORDER BY id",
+            (mobile.id,),
+        ).fetchall()
+    ]
+    assert rebased == [
+        f"recurring:{mobile.id}:{bot_id}:2026-11-02",
+        f"recurring:{mobile.id}:22:2026-11-02",
+        f"debt:{mobile.id}:{bot_id}",
+        f"debt_payment:{mobile.id}:{bot_id}",
+    ]
+
+
+def test_link_drops_bot_cash_row_that_collides_with_owner_key() -> None:
+    connection = setup_connection()
+    mobile = create_mobile_user(
+        connection,
+        email="dupe@example.com",
+        password_hash="hash",
+        first_name="Dupe",
+        timezone="Asia/Jakarta",
+        currency="IDR",
+    )
+    bot_user = get_or_create_user(
+        connection,
+        telegram_user_id=555888,
+        first_name="Bot",
+        timezone="Asia/Jakarta",
+        currency="IDR",
+    )
+
+    # Pemilik sudah punya baris kas untuk utang yang sama; baris bot duplikat.
+    for user_id in (mobile.id, bot_user.id):
+        connection.execute(
+            "INSERT INTO transactions (user_id, type, amount, transaction_date, source_key) "
+            "VALUES (?, 'income', 1000, '2026-11-02', ?)",
+            (user_id, f"debt:{user_id}:5"),
+        )
+
+    # Tidak boleh gagal karena indeks unik source_key.
+    link_telegram_account(connection, user_id=mobile.id, telegram_user_id=555888)
+
+    source_keys = [
+        row[0]
+        for row in connection.execute(
+            "SELECT source_key FROM transactions WHERE user_id = ?", (mobile.id,)
+        ).fetchall()
+    ]
+    assert source_keys == [f"debt:{mobile.id}:5"]
+
+
+def test_expired_link_codes_are_pruned_when_a_new_code_is_requested() -> None:
+    connection = setup_connection()
+    user = create_mobile_user(
+        connection,
+        email="prune@example.com",
+        password_hash="hash",
+        first_name="Prune",
+        timezone="Asia/Jakarta",
+        currency="IDR",
+    )
+    other = create_mobile_user(
+        connection,
+        email="other@example.com",
+        password_hash="hash",
+        first_name="Other",
+        timezone="Asia/Jakarta",
+        currency="IDR",
+    )
+    # Kode kedaluwarsa milik pengguna lain.
+    connection.execute(
+        "INSERT INTO telegram_link_codes (user_id, code, expires_at, used) "
+        "VALUES (?, '000001', '2000-01-01 00:00:00', 0)",
+        (other.id,),
+    )
+
+    create_telegram_link_code(connection, user_id=user.id, code="123456")
+
+    remaining = connection.execute(
+        "SELECT code FROM telegram_link_codes"
+    ).fetchall()
+    assert [row[0] for row in remaining] == ["123456"]
+
+
+def test_unlink_telegram_keeps_data_and_clears_telegram_id() -> None:
+    connection = setup_connection()
+    mobile = create_mobile_user(
+        connection,
+        email="unlink@example.com",
+        password_hash="hash",
+        first_name="Unlink",
+        timezone="Asia/Jakarta",
+        currency="IDR",
+    )
+    link_telegram_account(connection, user_id=mobile.id, telegram_user_id=424242)
+    connection.execute(
+        "INSERT INTO transactions (user_id, type, amount, transaction_date) "
+        "VALUES (?, 'expense', 5000, '2026-11-02')",
+        (mobile.id,),
+    )
+
+    unlinked = unlink_telegram_account(connection, user_id=mobile.id)
+
+    assert unlinked is not None
+    assert unlinked.telegram_user_id is None
+    assert unlinked.telegram_linked is False
+    assert (
+        connection.execute(
+            "SELECT COUNT(*) FROM transactions WHERE user_id = ?", (mobile.id,)
+        ).fetchone()[0]
+        == 1
+    )
+
+    # Akun Telegram baru bisa ditautkan setelah dilepas.
+    relinked = link_telegram_account(
+        connection, user_id=mobile.id, telegram_user_id=999999
+    )
+    assert relinked.telegram_user_id == 999999

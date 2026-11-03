@@ -78,12 +78,14 @@ from bot04.bot.handlers_transactions import (
 from bot04.bot.help_text import build_help_text
 from bot04.config import Config
 from bot04.services.pending_store import PendingConfirmationStore
-from finance_core.db.connection import open_database
+from finance_core.db.connection import close_pools, open_database
 from finance_core.db.migrations import init_db
 from finance_core.db.users import (
     consume_telegram_link_code,
+    get_user_by_telegram_id,
     link_telegram_account,
     peek_telegram_link_code,
+    unlink_telegram_account,
 )
 from finance_core.timezones import today_in
 
@@ -98,6 +100,7 @@ BOT_COMMANDS = [
     BotCommand("riwayat_pemasukan", "💰 Riwayat Pemasukan"),
     BotCommand("riwayat_pengeluaran", "💸 Riwayat Pengeluaran"),
     BotCommand("link", "🔗 Hubungkan akun Telegram"),
+    BotCommand("unlink", "🔓 Lepas tautan Telegram"),
 ]
 
 
@@ -134,7 +137,16 @@ def build_application(
         application.add_handler(handler)
 
     application.post_init = _set_bot_commands
+    # Tutup pool PostgreSQL saat bot berhenti, supaya restart lewat systemd
+    # tidak meninggalkan koneksi menggantung di sisi Supabase.
+    application.post_shutdown = _close_pools_on_shutdown
     return application
+
+
+async def _close_pools_on_shutdown(_: Application) -> None:
+    """Release every pooled PostgreSQL connection when the bot stops."""
+
+    close_pools()
 
 
 async def _set_bot_commands(application: Application) -> None:
@@ -170,6 +182,7 @@ def build_handlers(dependencies: BotDependencies) -> list[BaseHandler]:
         CommandHandler("riwayat_pengeluaran", _riwayat_pengeluaran_command),
         CommandHandler("help", _help_command),
         CommandHandler("link", _link_command),
+        CommandHandler("unlink", _unlink_command),
         CallbackQueryHandler(
             _quick_confirm_callback,
             pattern=f"^({CALLBACK_QUICK_SAVE}|{CALLBACK_QUICK_CANCEL})$",
@@ -523,6 +536,34 @@ async def _link_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await message.reply_text(
         "Akun Telegram berhasil dihubungkan ke "
         f"{linked_user.first_name or linked_user.email or linked_user.id}."
+    )
+
+
+async def _unlink_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Lepas tautan akun Telegram ini dari akun Mobile tanpa menghapus data."""
+
+    user = update.effective_user
+    message = update.effective_message
+    if user is None or message is None:
+        return
+
+    connection = _connection(context)
+    db_user = await _db_call(
+        get_user_by_telegram_id, connection, telegram_user_id=user.id
+    )
+    if db_user is None or db_user.email is None:
+        # Baris bot murni (tanpa email) tidak punya akun Mobile untuk dilepas.
+        # Pengguna bot murni cukup berhenti memakai bot.
+        await message.reply_text(
+            "Akun Telegram ini belum tertaut ke akun Mobile mana pun."
+        )
+        return
+
+    await _db_call(unlink_telegram_account, connection, user_id=db_user.id)
+    await message.reply_text(
+        "Tautan Telegram dilepas. Data keuanganmu tetap utuh. "
+        "Minta kode baru di aplikasi lalu kirim /link <kode> untuk menautkan "
+        "akun Telegram lain."
     )
 
 

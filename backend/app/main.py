@@ -10,7 +10,7 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from finance_core.db.connection import open_database
+from finance_core.db.connection import close_pools, open_database
 from finance_core.db.migrations import run_migrations
 
 from .config import Settings, get_settings
@@ -62,6 +62,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 scheduler_task.cancel()
                 with suppress(asyncio.CancelledError):
                     await scheduler_task
+            # Tutup pool PostgreSQL secara eksplisit. Tanpa ini, restart lewat
+            # systemd meninggalkan koneksi menggantung di sisi Supabase sampai
+            # server memutusnya sendiri.
+            close_pools()
 
     application = FastAPI(
         title="Personal Finance API",

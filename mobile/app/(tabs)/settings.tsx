@@ -45,6 +45,28 @@ export default function SettingsScreen() {
     }
   };
 
+  const handleUnlinkTelegram = () => {
+    Alert.alert(
+      'Putuskan tautan Telegram',
+      'Data keuanganmu tetap aman. Setelah diputus, kamu bisa menautkan akun Telegram lain lewat kode baru.',
+      [
+        { text: 'Batal', style: 'cancel' },
+        {
+          text: 'Putuskan',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await authApi.unlinkTelegram();
+              await loadProfile();
+            } catch (err) {
+              Alert.alert('Gagal memutus tautan', describeApiError(err, 'Coba lagi sebentar lagi.'));
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleLogout = () => {
     Alert.alert('Keluar dari akun', 'Kamu perlu masuk lagi untuk membuka data keuangan.', [
       { text: 'Batal', style: 'cancel' },
@@ -142,6 +164,22 @@ export default function SettingsScreen() {
               style={styles.linkButton}
             />
           </View>
+          {user?.telegram_linked ? (
+            <Pressable
+              onPress={handleUnlinkTelegram}
+              accessibilityRole="button"
+              accessibilityLabel="Putuskan tautan Telegram"
+              style={({ pressed }) => [styles.navRow, styles.lastNavRow, pressed && styles.pressed]}
+            >
+              <View style={styles.navBody}>
+                <Text style={styles.navTitle}>Putuskan tautan Telegram</Text>
+                <Text style={styles.navHint}>
+                  Lepas akun Telegram ini tanpa menghapus data keuangan.
+                </Text>
+              </View>
+              <Ionicons name="unlink-outline" size={18} color={Colors.inkMuted} />
+            </Pressable>
+          ) : null}
         </View>
       </FadeIn>
 
@@ -260,6 +298,10 @@ const styles = StyleSheet.create({
   },
   linkButton: {
     flexShrink: 0,
+  },
+  lastNavRow: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.line,
   },
   navBody: {
     flex: 1,
