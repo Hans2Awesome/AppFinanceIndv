@@ -35,6 +35,11 @@ ENVIRONMENT=production
 CORS_ORIGINS=https://<domain-mobile-web>
 ```
 
+`ENVIRONMENT=production` menolak start bila `DATABASE_URL` kosong atau
+`CORS_ORIGINS` masih `*`. Ini disengaja: API **dan** bot gagal keras, bukan
+diam-diam menulis ke `bot04.sqlite3` lokal. `/docs` dan `/openapi.json` juga
+mati di mode ini.
+
 ## 4. Buat skema dan salin data
 
 Pakai DSN **direct** (port 5432) untuk langkah ini:

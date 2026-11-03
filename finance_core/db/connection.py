@@ -12,10 +12,12 @@ from __future__ import annotations
 
 import re
 import sqlite3
+import sys
 import threading
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any
+from urllib.parse import urlsplit
 
 try:  # PostgreSQL support stays optional so SQLite-only installs keep working.
     import psycopg
@@ -312,8 +314,34 @@ def _pool_for(url: str) -> Any:
 def connect_url(url: str) -> PostgresConnection:
     """Open one logical PostgreSQL connection backed by the shared pool."""
 
+    _reject_production_url_during_tests(url)
     pool = _pool_for(url)
     return PostgresConnection(pool.getconn(), pool)
+
+
+# Hosts that only ever mean "this is the real production database".
+_PRODUCTION_DB_HOSTS = ("supabase.co", "supabase.com", "supabase.net")
+
+
+def _reject_production_url_during_tests(url: str) -> None:
+    """Refuse to touch a hosted production database from a pytest run.
+
+    ``conftest.py`` blanks ``DATABASE_URL`` before ``dotenv`` reads ``.env``, but
+    that guard is one import away from being bypassed: a future
+    ``load_dotenv(override=True)``, a script that imports the app first, or a
+    fixture that restores the file value. Checking again at the moment the
+    connection is opened closes that hole, because no test can write to Supabase
+    even if the URL comes back.
+    """
+
+    if "pytest" not in sys.modules:
+        return
+    host = (urlsplit(url).hostname or "").lower()
+    if any(host == suffix or host.endswith(f".{suffix}") for suffix in _PRODUCTION_DB_HOSTS):
+        raise RuntimeError(
+            f"Refusing to open the production database ({host}) from a pytest run. "
+            "Tests must use a temporary SQLite file or a local PostgreSQL server."
+        )
 
 
 def close_pools() -> None:

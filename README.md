@@ -224,6 +224,9 @@ balance stay in sync. Deleting a debt deletes its generated cash rows too.
 ## 🔒 Security notes
 
 - `SECRET_KEY` is mandatory and must be 32+ characters in `ENVIRONMENT=production`.
+- `ENVIRONMENT=production` refuses to start when `DATABASE_URL` is empty, so a
+  misconfigured VPS can never keep writing to the local SQLite file. The check
+  lives in `finance_core`, so the API and the Telegram bot both fail loudly.
 - Access tokens last 30 minutes; refresh tokens last 30 days. Every token
   carries a `ver` claim matched against `users.token_version`, so logout revokes
   the whole session. The mobile client refreshes transparently and stores tokens
@@ -231,6 +234,10 @@ balance stay in sync. Deleting a debt deletes its generated cash rows too.
 - Login is rate limited per client IP and email; registration and refresh have
   their own per-IP limits.
 - CORS origins come from `CORS_ORIGINS`; wildcard origins disable credentials.
+  In `ENVIRONMENT=production` a wildcard is refused at startup, because the
+  Android app and the bot are not browsers and never need one.
+- `/docs`, `/redoc` and `/openapi.json` are disabled in `ENVIRONMENT=production`,
+  so scanners behind the Cloudflare Tunnel cannot read the API schema.
 - Login throttling keys on the real client IP. `CF-Connecting-IP` and
   `X-Forwarded-For` are honored only from addresses in `TRUSTED_PROXIES`
   (localhost by default), so a direct client cannot spoof its address. Run

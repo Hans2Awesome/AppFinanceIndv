@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
 
 from finance_core.config import env_value, get_common_settings
-
-logger = logging.getLogger(__name__)
 
 MIN_PRODUCTION_SECRET_LENGTH = 32
 
@@ -74,6 +71,14 @@ def get_settings(*, load_dotenv_file: bool = True) -> Settings:
         "*",
     )
 
+    # Android and the Telegram bot are not browsers, so a wildcard origin buys
+    # nothing in production and silently allows any website to call the API.
+    if environment.lower() == "production" and "*" in cors_origins:
+        raise RuntimeError(
+            "CORS_ORIGINS='*' is not allowed in production. "
+            "Set an explicit comma separated list of origins."
+        )
+
     settings = Settings(
         secret_key=secret_key,
         algorithm=env_value("ALGORITHM", "HS256"),
@@ -91,8 +96,5 @@ def get_settings(*, load_dotenv_file: bool = True) -> Settings:
             int(env_value("RECURRING_SCHEDULER_INTERVAL_SECONDS", "30")),
         ),
     )
-
-    if settings.is_production and not settings.allow_credentials:
-        logger.warning("CORS_ORIGINS='*' with credentials disabled; set explicit origins.")
 
     return settings

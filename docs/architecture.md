@@ -67,9 +67,12 @@ every session for that user.
 
 **Config lives in the environment.** `finance_core/config.py` is the single
 loader for `DATABASE_PATH`, `TIMEZONE`, `CURRENCY`, and `ENVIRONMENT`; the API
-and bot add only their own values on top. `EXPO_PUBLIC_API_URL` replaces the
-committed tunnel URL, and the quick-start script passes it to Expo instead of
-rewriting `mobile/services/api.ts`.
+and bot add only their own values on top. It is also the single validator:
+`ENVIRONMENT=production` without `DATABASE_URL` raises `RuntimeError` there, so
+the API and the bot both refuse to start rather than quietly writing to the
+local SQLite file. `EXPO_PUBLIC_API_URL` replaces the committed tunnel URL, and
+the quick-start script passes it to Expo instead of rewriting
+`mobile/services/api.ts`.
 
 ## Known limits
 

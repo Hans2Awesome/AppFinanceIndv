@@ -74,6 +74,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ),
         version="1.0.0",
         lifespan=lifespan,
+        # Production hides the schema: the VPS is reachable through a Cloudflare
+        # Tunnel, so /docs and /openapi.json would hand scanners the full list of
+        # endpoints and payloads for free.
+        docs_url=None if resolved_settings.is_production else "/docs",
+        redoc_url=None if resolved_settings.is_production else "/redoc",
+        openapi_url=None if resolved_settings.is_production else "/openapi.json",
     )
 
     application.add_middleware(
@@ -95,12 +101,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def health_check() -> dict[str, str]:
         """Health check and API info."""
 
-        return {
+        info = {
             "status": "online",
             "app": "Personal Finance API",
             "version": "1.0.0",
-            "docs_url": "/docs",
         }
+        if not resolved_settings.is_production:
+            info["docs_url"] = "/docs"
+        return info
 
     return application
 
