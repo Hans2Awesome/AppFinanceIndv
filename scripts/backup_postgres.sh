@@ -53,7 +53,10 @@ fi
 
 # gzip always emits a valid ~20 byte header/trailer, so a non-zero size alone
 # does not prove the dump contains data. Require real SQL output as well.
-if [ ! -s "$partial" ] || ! gzip -dc "$partial" | grep -q .; then
+# wc -c reads the stream to EOF, so gzip never gets SIGPIPE even when the dump
+# exceeds the 64 KB kernel pipe buffer (grep -q . would exit early and kill
+# gzip with exit 141 under `set -o pipefail`).
+if [ ! -s "$partial" ] || test "$(gzip -dc "$partial" | wc -c)" -le 0; then
     echo "Backup failed: dump is empty." >&2
     exit 1
 fi
