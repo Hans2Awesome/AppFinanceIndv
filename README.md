@@ -238,6 +238,9 @@ balance stay in sync. Deleting a debt deletes its generated cash rows too.
   Android app and the bot are not browsers and never need one.
 - `/docs`, `/redoc` and `/openapi.json` are disabled in `ENVIRONMENT=production`,
   so scanners behind the Cloudflare Tunnel cannot read the API schema.
+- The Supabase tables have RLS enabled with no policy, so the Data API exposes
+  nothing through the `anon` role. The API and bot connect as `postgres`, which
+  has `BYPASSRLS`, so their queries are unaffected.
 - Login throttling keys on the real client IP. `CF-Connecting-IP` and
   `X-Forwarded-For` are honored only from addresses in `TRUSTED_PROXIES`
   (localhost by default), so a direct client cannot spoof its address. Run

@@ -258,11 +258,65 @@ _MIGRATION_4: tuple[str, ...] = (
 )
 
 
-_POSTGRES_MIGRATIONS: dict[int, tuple[str, ...]] = {
+# Tables that the PostgREST Data API would expose through the ``anon`` role.
+# Enabling RLS without any policy makes that path deny-all while the owner role
+# used by the API and bot (``postgres``, which has BYPASSRLS) keeps working
+# unchanged.
+_RLS_TABLES: tuple[str, ...] = (
+    "users",
+    "categories",
+    "transactions",
+    "debts",
+    "debt_payments",
+    "recurring_transactions",
+    "telegram_link_codes",
+)
+
+
+_MIGRATION_5: tuple[str, ...] = (
+    # ``code`` is already UNIQUE, and PostgreSQL backs that constraint with its
+    # own unique index. The manual copy only doubled write cost.
+    "DROP INDEX IF EXISTS idx_telegram_link_codes_code",
+    # UPDATE was unguarded on these two tables, so a manual fix inside the
+    # Supabase SQL editor could store a negative installment or an unknown
+    # category type.
+    "DROP TRIGGER IF EXISTS trg_categories_valid_update ON categories",
+    "CREATE TRIGGER trg_categories_valid_update BEFORE UPDATE ON categories "
+    "FOR EACH ROW EXECUTE FUNCTION finance_check_category()",
+    "DROP TRIGGER IF EXISTS trg_debt_payments_valid_update ON debt_payments",
+    "CREATE TRIGGER trg_debt_payments_valid_update BEFORE UPDATE ON debt_payments "
+    "FOR EACH ROW EXECUTE FUNCTION finance_check_debt_payment()",
+    # ``email`` is nullable on purpose: a bot-only user has no email. So a
+    # NOT NULL cannot be used, and the guard is a check instead. Lowercasing is
+    # already enforced in Python, this closes the SQL-editor path.
+    """
+    CREATE OR REPLACE FUNCTION finance_check_user_email() RETURNS trigger
+    LANGUAGE plpgsql AS $$
+    BEGIN
+        IF NEW.email IS NOT NULL AND NEW.email <> lower(NEW.email) THEN
+            RAISE EXCEPTION 'email must be lowercase';
+        END IF;
+        RETURN NEW;
+    END;
+    $$
+    """,
+    "DROP TRIGGER IF EXISTS trg_users_email_lower_insert ON users",
+    "CREATE TRIGGER trg_users_email_lower_insert BEFORE INSERT ON users "
+    "FOR EACH ROW EXECUTE FUNCTION finance_check_user_email()",
+    "DROP TRIGGER IF EXISTS trg_users_email_lower_update ON users",
+    "CREATE TRIGGER trg_users_email_lower_update BEFORE UPDATE ON users "
+    "FOR EACH ROW EXECUTE FUNCTION finance_check_user_email()",
+) + tuple(
+    f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY" for table in _RLS_TABLES
+)
+
+
+_POSTGRES_MIGRATIONS = {
     1: _MIGRATION_1,
     2: _MIGRATION_2,
     3: _MIGRATION_3,
     4: _MIGRATION_4,
+    5: _MIGRATION_5,
 }
 
 
@@ -273,6 +327,10 @@ def run_postgres_migrations(connection: Any) -> int:
     from .migrations import SCHEMA_VERSION, current_version
 
     with transaction(connection):
+        # Dua worker yang menyala bersamaan akan menjalankan DDL yang sama dan
+        # bertabrakan di katalog sistem (pg_class/pg_type). Kunci transaksi ini
+        # membuat worker kedua menunggu, lalu melihat versi sudah terbarui.
+        connection.execute("SELECT pg_advisory_xact_lock(4042026)")
         connection.execute(
             f"""
             CREATE TABLE IF NOT EXISTS schema_migrations (

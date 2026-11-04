@@ -12,7 +12,7 @@ from collections.abc import Callable
 
 from .postgres_schema import run_postgres_migrations
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 def _create_core_tables(connection: sqlite3.Connection) -> None:
@@ -315,11 +315,48 @@ def _migration_4(connection: sqlite3.Connection) -> None:
     _create_telegram_link_codes_table(connection)
 
 
+def _migration_5(connection: sqlite3.Connection) -> None:
+    """Guard the remaining UPDATE paths, lowercase email, drop a duplicate index.
+
+    Mirrors the PostgreSQL migration of the same version so both dialects stay
+    on one schema number.
+    """
+
+    # ``code`` UNIQUE already creates an index; the manual copy only doubled
+    # write cost.
+    connection.execute("DROP INDEX IF EXISTS idx_telegram_link_codes_code")
+
+    connection.executescript(
+        """
+        CREATE TRIGGER IF NOT EXISTS trg_categories_valid_update
+        BEFORE UPDATE ON categories
+        WHEN NEW.type NOT IN ('income', 'expense', 'investment')
+        BEGIN SELECT RAISE(ABORT, 'invalid category row'); END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_debt_payments_valid_update
+        BEFORE UPDATE ON debt_payments
+        WHEN NEW.amount <= 0
+        BEGIN SELECT RAISE(ABORT, 'invalid debt payment row'); END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_users_email_lower_insert
+        BEFORE INSERT ON users
+        WHEN NEW.email IS NOT NULL AND NEW.email <> lower(NEW.email)
+        BEGIN SELECT RAISE(ABORT, 'email must be lowercase'); END;
+
+        CREATE TRIGGER IF NOT EXISTS trg_users_email_lower_update
+        BEFORE UPDATE ON users
+        WHEN NEW.email IS NOT NULL AND NEW.email <> lower(NEW.email)
+        BEGIN SELECT RAISE(ABORT, 'email must be lowercase'); END;
+        """
+    )
+
+
 _MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
     1: _migration_1,
     2: _migration_2,
     3: _migration_3,
     4: _migration_4,
+    5: _migration_5,
 }
 
 

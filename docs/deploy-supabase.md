@@ -81,6 +81,18 @@ jadi ia aman dijalankan setelah API sehat.
    Skrip migrasi sudah mencetak baris `verify <tabel>`; semua harus `ok`.
 4. Pastikan `systemctl restart finance-api` tidak meninggalkan koneksi
    menggantung di dashboard Supabase; pool ditutup di akhir lifespan.
+5. Cek RLS dan trigger sudah terpasang (migrasi v5):
+
+```sql
+SELECT relname, relrowsecurity FROM pg_class
+WHERE relname IN ('users','categories','transactions','debts',
+                  'debt_payments','recurring_transactions','telegram_link_codes');
+-- semua harus relrowsecurity = true
+```
+
+Supabase Security Advisor juga tidak boleh lagi melaporkan *RLS Disabled in
+Public*. Fungsi API dan bot tidak terpengaruh karena role `postgres` punya
+`BYPASSRLS`.
 
 ## 8. Backup mingguan
 
