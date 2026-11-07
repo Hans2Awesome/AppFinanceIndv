@@ -1,5 +1,6 @@
 import { AxiosError } from 'axios';
 import { api } from './api';
+import { signOutGoogle } from './googleAuth';
 import { clearSession, saveSession } from './session';
 import { AuthResponse, User } from '../types';
 
@@ -25,6 +26,22 @@ export const authApi = {
     return res.data;
   },
 
+  async googleLogin(params: { idToken: string }): Promise<AuthResponse> {
+    const res = await api.post<AuthResponse>('/api/auth/google', {
+      id_token: params.idToken,
+    });
+    await saveSession(res.data);
+    return res.data;
+  },
+
+  async linkGoogle(params: { idToken: string; password: string }): Promise<User> {
+    const res = await api.post<User>('/api/auth/google/link', {
+      id_token: params.idToken,
+      password: params.password,
+    });
+    return res.data;
+  },
+
   async createTelegramLinkToken(): Promise<{ code: string; expires_in_minutes: number }> {
     const res = await api.post<{ code: string; expires_in_minutes: number }>(
       '/api/auth/telegram-link-token'
@@ -42,6 +59,7 @@ export const authApi = {
     } catch {
       // The token may already be expired; clearing local state is enough.
     }
+    await signOutGoogle();
     await clearSession();
   },
 };

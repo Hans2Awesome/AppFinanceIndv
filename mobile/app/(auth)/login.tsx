@@ -6,14 +6,17 @@ import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Screen } from '../../components/ui/Screen';
 import { authApi, describeApiError } from '../../services/auth';
+import { GoogleAuthAction } from '../../components/auth/GoogleAuthAction';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleLogin = async () => {
+    if (loading || googleBusy) return;
     if (!email || !password) {
       setError('Harap isi email dan password.');
       return;
@@ -75,7 +78,19 @@ export default function LoginScreen() {
             onSubmitEditing={handleLogin}
           />
 
-          <Button title="Masuk" loading={loading} onPress={handleLogin} size="lg" />
+          <Button
+            title="Masuk"
+            loading={loading}
+            onPress={handleLogin}
+            size="lg"
+            disabled={googleBusy}
+          />
+
+          <GoogleAuthAction
+            disabled={loading}
+            onBusyChange={setGoogleBusy}
+            onError={(message) => setError(message)}
+          />
 
           <View style={styles.footer}>
             <Text style={styles.footerText}>Belum punya akun?</Text>

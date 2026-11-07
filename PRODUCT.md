@@ -24,8 +24,11 @@ sometimes in a hurry at a checkout counter or after a transfer.
 
 - Amounts are the most important data on every screen. They must be readable at
   a glance and never ambiguous about sign or type.
-- The app must work on a mid-range Android phone in Expo Go, offline-tolerant
-  (shows a clear error and a retry, never a blank screen).
+- The app must work on a mid-range Android phone, offline-tolerant (shows a
+  clear error and a retry, never a blank screen).
+- Email and password sign-in work in Expo Go. Native Google sign-in needs a
+  development build or APK on Android, so Google controls are hidden where the
+  native module is unavailable.
 - No fabricated data, no fake charts, no decorative metrics.
 - Copy stays in Indonesian, plain and direct.
 

@@ -65,6 +65,14 @@ token as a bearer credential. Both token types carry `ver`, compared with
 `users.token_version` on every use; logout increments the counter and revokes
 every session for that user.
 
+**Google is a second identity, not a new session system.** Android receives a
+Google ID token and posts it to `/api/auth/google`. The backend verifies it with
+Google's public keys against `GOOGLE_WEB_CLIENT_ID`, then looks the account up by
+the immutable `users.google_sub` and returns the same JWT pair as password login.
+Email matches never auto-link: an existing password account must authenticate and
+link Google explicitly. The Google subject is backend-only data and is never
+returned by the API.
+
 **Config lives in the environment.** `finance_core/config.py` is the single
 loader for `DATABASE_PATH`, `TIMEZONE`, `CURRENCY`, and `ENVIRONMENT`; the API
 and bot add only their own values on top. It is also the single validator:
@@ -78,6 +86,8 @@ the quick-start script passes it to Expo instead of rewriting
 
 - Tokens are revoked per user, not per device: logging out on one device ends
   all sessions for that account.
+- A Google-only account cannot set a password or unlink Google yet. Both need a
+  separate, explicitly approved recovery flow.
 - Login, registration, and refresh throttling is in-process. Multi-worker
   deployments need Redis.
 - Pending quick-input previews live in bot process memory; a restart drops them

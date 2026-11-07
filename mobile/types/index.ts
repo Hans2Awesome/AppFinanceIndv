@@ -12,6 +12,8 @@ export interface User {
   currency: string;
   created_at?: string;
   telegram_linked?: boolean;
+  google_linked?: boolean;
+  has_password?: boolean;
 }
 
 export interface AuthResponse {

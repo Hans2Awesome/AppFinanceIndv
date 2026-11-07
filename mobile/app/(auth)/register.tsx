@@ -6,15 +6,18 @@ import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 import { Screen } from '../../components/ui/Screen';
 import { authApi, describeApiError } from '../../services/auth';
+import { GoogleAuthAction } from '../../components/auth/GoogleAuthAction';
 
 export default function RegisterScreen() {
   const [firstName, setFirstName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleRegister = async () => {
+    if (loading || googleBusy) return;
     if (!email || !password) {
       setError('Harap isi email dan password.');
       return;
@@ -95,7 +98,19 @@ export default function RegisterScreen() {
             onSubmitEditing={handleRegister}
           />
 
-          <Button title="Daftar" loading={loading} onPress={handleRegister} size="lg" />
+          <Button
+            title="Daftar"
+            loading={loading}
+            onPress={handleRegister}
+            size="lg"
+            disabled={googleBusy}
+          />
+
+          <GoogleAuthAction
+            disabled={loading}
+            onBusyChange={setGoogleBusy}
+            onError={(message) => setError(message)}
+          />
 
           <View style={styles.footer}>
             <Text style={styles.footerText}>Sudah punya akun?</Text>

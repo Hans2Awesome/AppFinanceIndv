@@ -4,10 +4,26 @@
 
 Add native Google registration/sign-in to the Android app while preserving the existing FastAPI JWT sessions, password login, Telegram linking, and financial data ownership. Existing accounts must explicitly link Google after authenticating with their password. Never automatically link accounts by matching email.
 
-**Status:** Ready for prerequisite review, not unconditional implementation. Native compatibility and a user-owned feature specification are release blockers.
+**Status:** Implementation on `feature/google-auth-android` is partially complete. Native compatibility and a user-owned feature specification remain release blockers.
 **Branch:** `feature/google-auth-android`
 **Architecture:** Android obtains a Google ID token. FastAPI verifies it, resolves an immutable Google subject to the existing application user, and returns the current `TokenResponse`. The app stores only first-party session tokens through its existing session service.
 **Stack:** Python 3.11+, FastAPI/Pydantic v2, SQLite and psycopg/PostgreSQL, Expo SDK 58, React Native 0.88, React 19.3, TypeScript 6, Yarn, Expo Router.
+
+### Execution status (2026-11-07)
+
+Done:
+- Android native setup: `react-native-nitro-google-signin@2.3.1`, `react-native-nitro-modules@0.37.2`, `expo-dev-client@58.0.18`, config plugin, EAS `development` APK profile.
+- `expo prebuild --platform android` passed; Gradle compiled app Java/Kotlin and the Nitro/Google modules before the local build was stopped at the user's request. No APK was produced on this server.
+- Schema v6 in both dialects, user repository helpers, verifier, both endpoints, rate limits, mobile service/UI, docs.
+- `ruff check .` passes; `302` tests pass and `6` PostgreSQL portability tests skip without a local server; mobile `tsc --noEmit`, `expo config --type prebuild`, and the bundled compatibility validator exit 0.
+- Mobile duplicate-submit guard now covers the password and Google flows together; link requests require the password field.
+
+Blocked or pending (user-executed):
+- `docs/google-auth-android.md` feature specification still does not exist.
+- Google Cloud Web/Android OAuth clients and all signing SHA-1 values are not configured.
+- APK build is moved to expo.dev by user request; EAS/device smoke test, Play App Signing fingerprint, and production rollout remain user-executed.
+- The package's bundled compatibility validator is a false positive (its `2.0.x` key does not match `2.3.1`, so it skips checking RN 0.88). The main-branch matrix only lists RN through 0.87. A real EAS build is the only proof.
+- The `iosUrlScheme` in `mobile/app.json` is an Android-only placeholder; replace it before any iOS build.
 
 ## Scope
 
@@ -117,7 +133,7 @@ No `graphify-out/graph.json` exists. Evidence above comes from direct source rea
 | `POST /api/auth/google` | `id_token`: nonempty string, maximum 16384 characters | 200 current `TokenResponse` for both new/existing Google users | 401 invalid token; 409 email belongs to an unlinked account; 429 throttled; 503 disabled/unavailable |
 | `POST /api/auth/google/link` | Bearer JWT plus `id_token` and `password` (same byte/length limits as existing login) | 200 `UserResponse` with `google_linked: true` | 401 invalid session/password/token; 409 email mismatch, subject already owned, or replacement attempted; 429 throttled; 503 unavailable |
 
-`UserResponse` gains `google_linked: bool = False`; never return `google_sub`. Keep all existing `TokenResponse` fields, refresh behavior and `ver` semantics unchanged. Human-readable string `detail` messages must remain compatible with `describeApiError`; do not add a new incompatible error envelope.
+`UserResponse` gains `google_linked: bool = False` and `has_password: bool`; never return `google_sub`. The second field lets Settings distinguish a Google-only account, which has no password to confirm. Keep all existing `TokenResponse` fields, refresh behavior and `ver` semantics unchanged. Human-readable string `detail` messages must remain compatible with `describeApiError`; do not add a new incompatible error envelope.
 
 ### Resolution rules
 

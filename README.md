@@ -123,6 +123,12 @@ physical device use your machine's LAN IP, for example
 `EXPO_PUBLIC_API_URL=http://192.168.1.10:8000`. There is no hardcoded tunnel URL
 in the source tree.
 
+Google sign-in is Android-only and needs a development build or APK. Set the
+same Web client ID in backend `GOOGLE_WEB_CLIENT_ID` and mobile
+`EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`, register the Android package
+`com.financeapp.mobile` with the signing SHA-1, then follow
+`docs/mobile-quickstart.md`. Email/password login still works in Expo Go.
+
 ### 5. Telegram bot (optional)
 
 ```bash
@@ -199,6 +205,8 @@ cd mobile && npx tsc --noEmit
 | `GET` | `/api/auth/me` | Current profile |
 | `POST` | `/api/auth/telegram-link-token` | Issue a 6-digit code for `/link` in the bot |
 | `DELETE` | `/api/auth/telegram-link` | Unlink Telegram, keeping all financial data |
+| `POST` | `/api/auth/google` | Exchange an Android Google ID token for the app token pair |
+| `POST` | `/api/auth/google/link` | Link Google to the signed-in password account |
 | `GET/POST` | `/api/transactions` | List / create transactions |
 | `PUT/DELETE` | `/api/transactions/{id}` | Update / delete |
 | `POST` | `/api/transactions/quick-input` | Parse free text into a preview |
@@ -246,6 +254,12 @@ balance stay in sync. Deleting a debt deletes its generated cash rows too.
   (localhost by default), so a direct client cannot spoof its address. Run
   Uvicorn with `--proxy-headers --forwarded-allow-ips="127.0.0.1"` behind the
   tunnel; `scripts/run_app.py` already does this.
+- Google sign-in verifies the ID token signature, issuer, expiry, audience, and
+  `email_verified` with Google's published keys. The audience is
+  `GOOGLE_WEB_CLIENT_ID` on the server, never a value supplied by the app. The
+  immutable Google `sub` is the identity; email alone never links an account.
+  A Google user has no password until they register one, and Google controls
+  only appear in an Android build that includes the native module.
 - `DATABASE_URL` contains the Supabase password. Keep it in `.env` only; never
   commit it or ship it in the mobile bundle. Mobile and bot talk to the API, not
   to the database.
