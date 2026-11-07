@@ -77,3 +77,5 @@ class SlidingWindowLimiter:
 login_limiter = SlidingWindowLimiter(max_attempts=5, window_seconds=15 * 60)
 register_limiter = SlidingWindowLimiter(max_attempts=10, window_seconds=60 * 60)
 refresh_limiter = SlidingWindowLimiter(max_attempts=30, window_seconds=15 * 60)
+google_login_limiter = SlidingWindowLimiter(max_attempts=10, window_seconds=15 * 60)
+google_link_limiter = SlidingWindowLimiter(max_attempts=5, window_seconds=15 * 60)
