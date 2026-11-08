@@ -135,8 +135,24 @@ def test_starttls_negotiates_tls_then_logs_in_and_sends(smtp):
     [message] = server.messages
     assert message["From"] == "noreply@example.test"
     assert message["To"] == "person@example.com"
-    body = message.get_content()
+    body = message.get_body(preferencelist=("plain",)).get_content()
     assert "123456" in body
+
+
+def test_reset_email_includes_html_and_plain_text_alternatives(smtp):
+    mailer.send_password_reset_email("person@example.com", "012345", _settings())
+
+    [message] = smtp["plain"][0].messages
+    assert message.get_content_type() == "multipart/alternative"
+    plain = message.get_body(preferencelist=("plain",)).get_content()
+    html = message.get_body(preferencelist=("html",)).get_content()
+    for body in (plain, html):
+        assert "012345" in body
+        assert "10 minutes" in body
+    assert message["Subject"] == "Finance App password reset"
+    assert [part.get_content_type() for part in message.iter_parts()] == [
+        "text/plain", "text/html"
+    ]
 
 
 def test_starttls_skips_login_when_no_credentials(smtp):
@@ -168,7 +184,7 @@ def test_ssl_mode_uses_implicit_tls_without_plaintext_downgrade(smtp):
     assert isinstance(server.ssl_context, ssl.SSLContext)
     assert server.ssl_context.verify_mode == ssl.CERT_REQUIRED
     assert server.ssl_context.check_hostname is True
-    assert "654321" in server.messages[0].get_content()
+    assert "654321" in server.messages[0].get_body(preferencelist=("plain",)).get_content()
 
 
 # --- Configuration guards --------------------------------------------------

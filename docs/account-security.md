@@ -22,6 +22,12 @@ Without valid host/from/security settings, recovery requests return HTTP 503 for
 every email. There is no development bypass, printed code, or API-returned code.
 The Google sign-in and ordinary password flows remain available without SMTP.
 
+Recovery emails include a responsive HTML layout matching the app's paper-and-ink
+design and an equivalent plain-text alternative. The code remains selectable text;
+no remote images, web fonts, tracking resources, or app links are required. The
+hidden preheader does not include the code. Email-client rendering and inbox
+previews can vary; check the actual message on the devices your users use.
+
 Verify delivery with a disposable password account and a mailbox you control.
 Request recovery in the app, check the inbox/spam folder, enter the six-digit
 code in the same recovery screen, and sign in with the new password. SMTP errors

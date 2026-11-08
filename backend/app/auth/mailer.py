@@ -7,6 +7,7 @@ import ssl
 from email.message import EmailMessage
 
 from ..config import Settings
+from .email_templates import render_password_reset_email
 
 
 def smtp_is_configured(settings: Settings) -> bool:
@@ -32,12 +33,9 @@ def send_password_reset_email(email: str, code: str, settings: Settings) -> None
     message["Subject"] = "Finance App password reset"
     message["From"] = settings.smtp_from
     message["To"] = email
-    message.set_content(
-        f"Your password reset code is: {code}\n\n"
-        "This code expires in 10 minutes and works once. "
-        "Enter it in the app that requested the reset.\n"
-        "If you did not request this, ignore this email. Never share the code."
-    )
+    plain_text, html = render_password_reset_email(code)
+    message.set_content(plain_text)
+    message.add_alternative(html, subtype="html")
     context = ssl.create_default_context()
     if settings.smtp_security == "ssl":
         connection = smtplib.SMTP_SSL(
