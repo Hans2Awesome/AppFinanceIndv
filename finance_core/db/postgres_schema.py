@@ -318,6 +318,21 @@ _MIGRATION_6: tuple[str, ...] = (
 )
 
 
+_MIGRATION_7: tuple[str, ...] = (
+    """
+    CREATE TABLE IF NOT EXISTS password_reset_requests (
+        request_id TEXT PRIMARY KEY,
+        user_id BIGINT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+        code_hash TEXT NOT NULL,
+        expires_at BIGINT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts BETWEEN 0 AND 5),
+        token_version INTEGER NOT NULL
+    )
+    """,
+    "ALTER TABLE password_reset_requests ENABLE ROW LEVEL SECURITY",
+)
+
+
 _POSTGRES_MIGRATIONS = {
     1: _MIGRATION_1,
     2: _MIGRATION_2,
@@ -325,6 +340,7 @@ _POSTGRES_MIGRATIONS = {
     4: _MIGRATION_4,
     5: _MIGRATION_5,
     6: _MIGRATION_6,
+    7: _MIGRATION_7,
 }
 
 

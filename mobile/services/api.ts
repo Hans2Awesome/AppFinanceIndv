@@ -79,8 +79,21 @@ api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const config = error.config as RetriableConfig | undefined;
+    // A rejected password or Google proof is not an expired app session. Retrying
+    // those requests would consume the guess budget twice and could sign out a
+    // valid user when no refresh token is available.
+    const credentialAction = /^\/api\/auth\/(login|register|google(?:\/link)?|change-password|account|forgot-password|reset-password)\/?$/.test(
+      config?.url ?? ''
+    );
+    const detail = (error.response?.data as { detail?: unknown } | undefined)?.detail;
+    const sessionFailure =
+      detail === 'Token tidak valid atau sudah kedaluwarsa.' ||
+      detail === 'Token sudah tidak berlaku. Silakan login kembali.';
 
-    if (error.response?.status === 401 && config && !config._retry) {
+    if (
+      error.response?.status === 401 && config && !config._retry &&
+      (!credentialAction || sessionFailure)
+    ) {
       config._retry = true;
       if (await refreshSession()) {
         return api.request(config);

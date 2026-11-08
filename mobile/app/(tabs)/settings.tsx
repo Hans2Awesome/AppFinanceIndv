@@ -238,6 +238,43 @@ export default function SettingsScreen() {
         </View>
       </FadeIn>
 
+      <FadeIn delay={200}>
+        <Text style={styles.sectionLabel}>Account security</Text>
+        <View style={styles.block}>
+          <Pressable
+            onPress={() => router.push('/change-password')}
+            accessibilityRole="button"
+            accessibilityLabel="Change password"
+            style={({ pressed }) => [styles.navRow, pressed && styles.pressed]}
+          >
+            <View style={styles.navBody}>
+              <Text style={styles.navTitle}>Change password</Text>
+              <Text style={styles.navHint}>
+                {user?.has_password === false
+                  ? 'Signed in with Google. View password management info.'
+                  : 'Update your account password and sign out other devices.'}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={Colors.inkMuted} />
+          </Pressable>
+
+          <Pressable
+            onPress={() => router.push('/delete-account')}
+            accessibilityRole="button"
+            accessibilityLabel="Delete account"
+            style={({ pressed }) => [styles.navRow, styles.lastNavRow, pressed && styles.pressed]}
+          >
+            <View style={styles.navBody}>
+              <Text style={styles.dangerTitle}>Delete account</Text>
+              <Text style={styles.navHint}>
+                Permanently delete your account and all financial records.
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={Colors.danger} />
+          </Pressable>
+        </View>
+      </FadeIn>
+
       <FadeIn delay={210}>
         <Text style={styles.sectionLabel}>Tentang aplikasi</Text>
         <View style={styles.block}>
@@ -374,6 +411,10 @@ const styles = StyleSheet.create({
   navTitle: {
     ...Type.bodyStrong,
     color: Colors.ink,
+  },
+  dangerTitle: {
+    ...Type.bodyStrong,
+    color: Colors.danger,
   },
   navHint: {
     ...Type.caption,

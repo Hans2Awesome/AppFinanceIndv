@@ -24,6 +24,12 @@ class Settings:
     cors_origins: tuple[str, ...] = field(default_factory=lambda: ("*",))
     environment: str = "development"
     google_web_client_id: str | None = None
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_security: str = "starttls"
+    smtp_username: str = ""
+    smtp_password: str = field(default="", repr=False)
+    smtp_from: str = ""
     recurring_scheduler_enabled: bool = True
     recurring_scheduler_interval_seconds: int = 30
 
@@ -80,6 +86,12 @@ def get_settings(*, load_dotenv_file: bool = True) -> Settings:
             "Set an explicit comma separated list of origins."
         )
 
+    try:
+        smtp_port = int(env_value("SMTP_PORT", "587"))
+    except ValueError:
+        # Invalid SMTP configuration disables recovery, not unrelated login.
+        smtp_port = 0
+
     settings = Settings(
         secret_key=secret_key,
         algorithm=env_value("ALGORITHM", "HS256"),
@@ -92,6 +104,12 @@ def get_settings(*, load_dotenv_file: bool = True) -> Settings:
         cors_origins=cors_origins,
         environment=environment,
         google_web_client_id=env_value("GOOGLE_WEB_CLIENT_ID", "") or None,
+        smtp_host=env_value("SMTP_HOST", ""),
+        smtp_port=smtp_port,
+        smtp_security=env_value("SMTP_SECURITY", "starttls").lower(),
+        smtp_username=env_value("SMTP_USERNAME", ""),
+        smtp_password=env_value("SMTP_PASSWORD", ""),
+        smtp_from=env_value("SMTP_FROM", ""),
         recurring_scheduler_enabled=_env_bool("RECURRING_SCHEDULER_ENABLED", True),
         recurring_scheduler_interval_seconds=max(
             5,

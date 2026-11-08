@@ -24,6 +24,16 @@ export interface AuthResponse {
   user: User;
 }
 
+export interface ForgotPasswordResponse {
+  message: string;
+  request_id: string;
+  expires_in: number;
+}
+
+export interface ResetPasswordResponse {
+  message: string;
+}
+
 export interface Category {
   id: number;
   user_id: number;

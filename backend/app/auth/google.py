@@ -39,6 +39,7 @@ class VerifiedGoogleIdentity:
     subject: str
     email: str
     first_name: str | None
+    issued_at: int | None = None
 
 
 class _TimeoutRequest(Request):
@@ -114,4 +115,9 @@ def verify_google_id_token(raw_token: str) -> VerifiedGoogleIdentity:
         subject=subject,
         email=email.strip().lower(),
         first_name=first_name,
+        issued_at=(
+            claims["iat"]
+            if isinstance(claims.get("iat"), int) and not isinstance(claims.get("iat"), bool)
+            else None
+        ),
     )

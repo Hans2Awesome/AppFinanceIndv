@@ -207,6 +207,10 @@ cd mobile && npx tsc --noEmit
 | `DELETE` | `/api/auth/telegram-link` | Unlink Telegram, keeping all financial data |
 | `POST` | `/api/auth/google` | Exchange an Android Google ID token for the app token pair |
 | `POST` | `/api/auth/google/link` | Link Google to the signed-in password account |
+| `POST` | `/api/auth/change-password` | Verify current password, rotate password and sessions |
+| `POST` | `/api/auth/forgot-password` | Send a time-limited recovery code through configured SMTP |
+| `POST` | `/api/auth/reset-password` | Consume a recovery code and revoke existing sessions |
+| `DELETE` | `/api/auth/account` | Permanently delete the verified account and its live data |
 | `GET/POST` | `/api/transactions` | List / create transactions |
 | `PUT/DELETE` | `/api/transactions/{id}` | Update / delete |
 | `POST` | `/api/transactions/quick-input` | Parse free text into a preview |
@@ -218,6 +222,9 @@ cd mobile && npx tsc --noEmit
 | `GET/POST` | `/api/debts` | List / create debts and receivables |
 | `GET` | `/api/debts/summary` | Remaining totals and due-soon count |
 | `POST/GET` | `/api/debts/{id}/payments` | Installments |
+
+See [Account security](docs/account-security.md) for SMTP configuration, recovery
+limits, Google-only account behavior, and permanent-deletion semantics.
 
 Dates are ISO `YYYY-MM-DD`. Money is an integer in the smallest currency unit
 (rupiah, no decimals).

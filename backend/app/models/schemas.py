@@ -35,6 +35,46 @@ class UserLogin(BaseModel):
     password: str = Field(..., min_length=1, max_length=128)
 
 
+class NewPasswordRequest(BaseModel):
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def _new_password_fits_bcrypt(cls, value: str) -> str:
+        if len(value.encode("utf-8")) > 72:
+            raise ValueError("Password must be at most 72 UTF-8 bytes.")
+        return value
+
+
+class ChangePasswordRequest(NewPasswordRequest):
+    current_password: str = Field(..., min_length=1, max_length=128)
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(NewPasswordRequest):
+    request_id: str = Field(..., min_length=1, max_length=128)
+    code: str = Field(..., pattern=r"^[0-9]{6}$")
+
+
+class ForgotPasswordResponse(BaseModel):
+    message: str
+    request_id: str
+    expires_in: int = 600
+
+
+class MessageResponse(BaseModel):
+    message: str
+
+
+class DeleteAccountRequest(BaseModel):
+    confirmation: Literal["DELETE"]
+    password: Optional[str] = Field(None, min_length=1, max_length=128)
+    id_token: Optional[str] = Field(None, min_length=1, max_length=16384)
+
+
 class RefreshRequest(BaseModel):
     refresh_token: str = Field(..., min_length=1)
 
