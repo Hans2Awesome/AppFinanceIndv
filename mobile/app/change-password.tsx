@@ -1,8 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -100,115 +98,107 @@ export default function ChangePasswordScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.flex}
-    >
-      <Screen bottomInset>
-        <View style={styles.header}>
-          <Pressable
-            onPress={handleBack}
-            hitSlop={8}
-            style={styles.back}
-            accessibilityRole="button"
-            accessibilityLabel="Back"
-          >
-            <Ionicons name="arrow-back" size={20} color={Colors.ink} />
-          </Pressable>
-          <Text style={styles.title}>Change password</Text>
+    <Screen bottomInset keyboardBehavior="padding">
+      <View style={styles.header}>
+        <Pressable
+          onPress={handleBack}
+          hitSlop={8}
+          style={styles.back}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+        >
+          <Ionicons name="arrow-back" size={20} color={Colors.ink} />
+        </Pressable>
+        <Text style={styles.title}>Change password</Text>
+      </View>
+
+      {profileError ? <ErrorState message={profileError} onRetry={loadProfile} /> : null}
+
+      {user === null && !profileError ? (
+        <View style={styles.loadingBlock}>
+          <SkeletonRows count={3} />
         </View>
-
-        {profileError ? <ErrorState message={profileError} onRetry={loadProfile} /> : null}
-
-        {user === null && !profileError ? (
-          <View style={styles.loadingBlock}>
-            <SkeletonRows count={3} />
+      ) : user && !user.has_password ? (
+        <View style={styles.noticeBlock}>
+          <View style={styles.noticeHeader}>
+            <Ionicons name="logo-google" size={18} color={Colors.inkSoft} />
+            <Text style={styles.noticeTitle}>Managed by Google</Text>
           </View>
-        ) : user && !user.has_password ? (
-          <View style={styles.noticeBlock}>
-            <View style={styles.noticeHeader}>
-              <Ionicons name="logo-google" size={18} color={Colors.inkSoft} />
-              <Text style={styles.noticeTitle}>Managed by Google</Text>
-            </View>
-            <Text style={styles.noticeBody}>
-              This account signs in with Google only and does not have a separate Bot04 password.
-              Google manages your password and sign-in security in your Google Account settings.
+          <Text style={styles.noticeBody}>
+            This account signs in with Google only and does not have a separate Bot04 password.
+            Google manages your password and sign-in security in your Google Account settings.
+          </Text>
+          <Button
+            title="Back to settings"
+            variant="secondary"
+            onPress={handleBack}
+            style={styles.noticeButton}
+          />
+        </View>
+      ) : user ? (
+        <View style={styles.form}>
+          <Text style={styles.intro}>
+            Updating your password keeps this device signed in and revokes any other active
+            sessions or pending recovery codes.
+          </Text>
+
+          {error ? (
+            <Text style={styles.error} accessibilityLiveRegion="polite">
+              {error}
             </Text>
-            <Button
-              title="Back to settings"
-              variant="secondary"
-              onPress={handleBack}
-              style={styles.noticeButton}
-            />
-          </View>
-        ) : user ? (
-          <View style={styles.form}>
-            <Text style={styles.intro}>
-              Updating your password keeps this device signed in and revokes any other active
-              sessions or pending recovery codes.
-            </Text>
+          ) : null}
 
-            {error ? (
-              <Text style={styles.error} accessibilityLiveRegion="polite">
-                {error}
-              </Text>
-            ) : null}
+          <Input
+            label="Current password"
+            placeholder="Your current password"
+            value={currentPassword}
+            onChangeText={setCurrentPassword}
+            secureTextEntry
+            autoComplete="password"
+            textContentType="password"
+            returnKeyType="next"
+            accessibilityLabel="Current password"
+          />
 
-            <Input
-              label="Current password"
-              placeholder="Your current password"
-              value={currentPassword}
-              onChangeText={setCurrentPassword}
-              secureTextEntry
-              autoComplete="password"
-              textContentType="password"
-              returnKeyType="next"
-              accessibilityLabel="Current password"
-            />
+          <Input
+            label="New password"
+            placeholder="At least 8 characters"
+            value={newPassword}
+            onChangeText={setNewPassword}
+            secureTextEntry
+            autoComplete="new-password"
+            textContentType="newPassword"
+            hint="8 characters minimum, up to 72 UTF-8 bytes"
+            returnKeyType="next"
+            accessibilityLabel="New password"
+          />
 
-            <Input
-              label="New password"
-              placeholder="At least 8 characters"
-              value={newPassword}
-              onChangeText={setNewPassword}
-              secureTextEntry
-              autoComplete="new-password"
-              textContentType="newPassword"
-              hint="8 characters minimum, up to 72 UTF-8 bytes"
-              returnKeyType="next"
-              accessibilityLabel="New password"
-            />
+          <Input
+            label="Confirm new password"
+            placeholder="Repeat new password"
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+            secureTextEntry
+            autoComplete="new-password"
+            textContentType="newPassword"
+            returnKeyType="done"
+            onSubmitEditing={handleChangePassword}
+            accessibilityLabel="Confirm new password"
+          />
 
-            <Input
-              label="Confirm new password"
-              placeholder="Repeat new password"
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              secureTextEntry
-              autoComplete="new-password"
-              textContentType="newPassword"
-              returnKeyType="done"
-              onSubmitEditing={handleChangePassword}
-              accessibilityLabel="Confirm new password"
-            />
-
-            <Button
-              title="Update password"
-              loading={loading}
-              onPress={handleChangePassword}
-              size="lg"
-            />
-          </View>
-        ) : null}
-      </Screen>
-    </KeyboardAvoidingView>
+          <Button
+            title="Update password"
+            loading={loading}
+            onPress={handleChangePassword}
+            size="lg"
+          />
+        </View>
+      ) : null}
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

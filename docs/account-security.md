@@ -110,6 +110,11 @@ Verification on the combined tree:
 - Ruff, Python compilation, and mobile TypeScript checks passed. Expo's generated
   route declarations were refreshed to include the three new account screens.
 - Seven mobile security tests and three login merge structure assertions passed.
+- Follow-up review found redundant keyboard-avoidance wrappers in the three new
+  account screens. Each now delegates to `Screen` with `keyboardBehavior="padding"`.
+  Three regression tests failed before the fix and passed afterward; the mobile
+  security suite now has ten passing tests. TypeScript and Android export were
+  rechecked after this fix. Physical-device keyboard behavior remains unverified.
 - Android JavaScript/Hermes export passed with two Metro workers. This is not an
   APK build or physical-device verification.
 

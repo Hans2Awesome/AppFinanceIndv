@@ -86,3 +86,36 @@ test('expired access token on security endpoint still refreshes once', async () 
 test('ordinary authenticated requests retain automatic refresh', async () => {
   await checkRefresh('/api/transactions', 'unauthorized', true);
 });
+
+for (const relativePath of [
+  'app/(auth)/forgot-password.tsx',
+  'app/change-password.tsx',
+  'app/delete-account.tsx',
+]) {
+  test(`${relativePath} delegates keyboard avoidance to Screen with padding`, () => {
+    const source = ts.createSourceFile(
+      relativePath,
+      fs.readFileSync(path.join(__dirname, '..', relativePath), 'utf8'),
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+    let screens = 0;
+    function visit(node) {
+      if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+        const name = node.tagName.getText(source);
+        assert.notEqual(name, 'KeyboardAvoidingView');
+        if (name === 'Screen') {
+          screens += 1;
+          const behavior = node.attributes.properties.find(
+            (attribute) => attribute.name?.getText(source) === 'keyboardBehavior',
+          );
+          assert.equal(behavior?.initializer?.text, 'padding');
+        }
+      }
+      ts.forEachChild(node, visit);
+    }
+    visit(source);
+    assert.equal(screens, 1);
+  });
+}

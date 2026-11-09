@@ -1,8 +1,6 @@
 import React, { useCallback, useState } from 'react';
 import {
   Alert,
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -169,172 +167,164 @@ export default function ForgotPasswordScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.flex}
-    >
-      <Screen contentStyle={styles.scroll} bottomInset>
-        <View style={styles.brand}>
-          <Text style={styles.wordmark}>Bot04</Text>
-          <View style={styles.brandRule} />
-          <Text style={styles.tagline}>Account recovery</Text>
+    <Screen contentStyle={styles.scroll} bottomInset keyboardBehavior="padding">
+      <View style={styles.brand}>
+        <Text style={styles.wordmark}>Bot04</Text>
+        <View style={styles.brandRule} />
+        <Text style={styles.tagline}>Account recovery</Text>
+      </View>
+
+      {step === 'request' ? (
+        <View style={styles.form}>
+          <Text style={styles.title}>Forgot password</Text>
+          <Text style={styles.subtitle}>
+            Enter the email address for your account. If it uses a password, we will send a
+            6-digit recovery code valid for 10 minutes.
+          </Text>
+
+          {error ? (
+            <Text style={styles.error} accessibilityLiveRegion="polite">
+              {error}
+            </Text>
+          ) : null}
+
+          <Input
+            label="Email"
+            placeholder="name@example.com"
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            autoComplete="email"
+            textContentType="emailAddress"
+            keyboardType="email-address"
+            returnKeyType="send"
+            onSubmitEditing={handleRequestCode}
+            accessibilityLabel="Account email"
+          />
+
+          <Button
+            title="Send recovery code"
+            loading={loading}
+            onPress={handleRequestCode}
+            size="lg"
+          />
+
+          <View style={styles.footer}>
+            <Pressable
+              onPress={handleBackToLogin}
+              hitSlop={10}
+              style={styles.linkTap}
+              accessibilityRole="link"
+              accessibilityLabel="Back to sign in"
+            >
+              <Text style={styles.link}>Back to sign in</Text>
+            </Pressable>
+          </View>
         </View>
+      ) : (
+        <View style={styles.form}>
+          <Text style={styles.title}>Reset password</Text>
+          <Text style={styles.subtitle}>
+            {statusMessage ||
+              'Enter the 6-digit code from your email and choose a new password. Code expires in 10 minutes.'}
+          </Text>
 
-        {step === 'request' ? (
-          <View style={styles.form}>
-            <Text style={styles.title}>Forgot password</Text>
-            <Text style={styles.subtitle}>
-              Enter the email address for your account. If it uses a password, we will send a
-              6-digit recovery code valid for 10 minutes.
+          {error ? (
+            <Text style={styles.error} accessibilityLiveRegion="polite">
+              {error}
             </Text>
+          ) : null}
 
-            {error ? (
-              <Text style={styles.error} accessibilityLiveRegion="polite">
-                {error}
-              </Text>
-            ) : null}
+          <Input
+            label="6-digit code"
+            placeholder="000000"
+            value={code}
+            onChangeText={(val) => setCode(val.replace(/\D/g, '').slice(0, 6))}
+            keyboardType="number-pad"
+            autoComplete="one-time-code"
+            textContentType="oneTimeCode"
+            maxLength={6}
+            returnKeyType="next"
+            accessibilityLabel="6-digit recovery code"
+          />
 
-            <Input
-              label="Email"
-              placeholder="name@example.com"
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              autoComplete="email"
-              textContentType="emailAddress"
-              keyboardType="email-address"
-              returnKeyType="send"
-              onSubmitEditing={handleRequestCode}
-              accessibilityLabel="Account email"
-            />
+          <Input
+            label="New password"
+            placeholder="At least 8 characters"
+            value={newPassword}
+            onChangeText={setNewPassword}
+            secureTextEntry
+            autoComplete="new-password"
+            textContentType="newPassword"
+            hint="8 characters minimum, up to 72 UTF-8 bytes"
+            returnKeyType="next"
+            accessibilityLabel="New password"
+          />
 
-            <Button
-              title="Send recovery code"
-              loading={loading}
-              onPress={handleRequestCode}
-              size="lg"
-            />
+          <Input
+            label="Confirm new password"
+            placeholder="Repeat new password"
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+            secureTextEntry
+            autoComplete="new-password"
+            textContentType="newPassword"
+            returnKeyType="done"
+            onSubmitEditing={handleResetPassword}
+            accessibilityLabel="Confirm new password"
+          />
 
-            <View style={styles.footer}>
-              <Pressable
-                onPress={handleBackToLogin}
-                hitSlop={10}
-                style={styles.linkTap}
-                accessibilityRole="link"
-                accessibilityLabel="Back to sign in"
-              >
-                <Text style={styles.link}>Back to sign in</Text>
-              </Pressable>
-            </View>
+          <Button
+            title="Reset password"
+            loading={loading}
+            disabled={resending}
+            onPress={handleResetPassword}
+            size="lg"
+          />
+
+          <Button
+            title="Resend code"
+            variant="secondary"
+            loading={resending}
+            disabled={loading}
+            onPress={handleResendCode}
+            style={styles.secondaryAction}
+          />
+
+          <View style={styles.footer}>
+            <Pressable
+            disabled={loading || resending}
+            onPress={() => {
+                clearSecrets();
+                setError(null);
+                setStep('request');
+              }}
+              hitSlop={10}
+              style={styles.linkTap}
+            accessibilityRole="button"
+            accessibilityState={{ disabled: loading || resending }}
+              accessibilityLabel="Use a different email"
+            >
+              <Text style={styles.link}>Use a different email</Text>
+            </Pressable>
+            <Text style={styles.footerDot}>·</Text>
+            <Pressable
+              onPress={handleBackToLogin}
+              hitSlop={10}
+              style={styles.linkTap}
+              accessibilityRole="link"
+              accessibilityLabel="Back to sign in"
+            >
+              <Text style={styles.link}>Back to sign in</Text>
+            </Pressable>
           </View>
-        ) : (
-          <View style={styles.form}>
-            <Text style={styles.title}>Reset password</Text>
-            <Text style={styles.subtitle}>
-              {statusMessage ||
-                'Enter the 6-digit code from your email and choose a new password. Code expires in 10 minutes.'}
-            </Text>
-
-            {error ? (
-              <Text style={styles.error} accessibilityLiveRegion="polite">
-                {error}
-              </Text>
-            ) : null}
-
-            <Input
-              label="6-digit code"
-              placeholder="000000"
-              value={code}
-              onChangeText={(val) => setCode(val.replace(/\D/g, '').slice(0, 6))}
-              keyboardType="number-pad"
-              autoComplete="one-time-code"
-              textContentType="oneTimeCode"
-              maxLength={6}
-              returnKeyType="next"
-              accessibilityLabel="6-digit recovery code"
-            />
-
-            <Input
-              label="New password"
-              placeholder="At least 8 characters"
-              value={newPassword}
-              onChangeText={setNewPassword}
-              secureTextEntry
-              autoComplete="new-password"
-              textContentType="newPassword"
-              hint="8 characters minimum, up to 72 UTF-8 bytes"
-              returnKeyType="next"
-              accessibilityLabel="New password"
-            />
-
-            <Input
-              label="Confirm new password"
-              placeholder="Repeat new password"
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              secureTextEntry
-              autoComplete="new-password"
-              textContentType="newPassword"
-              returnKeyType="done"
-              onSubmitEditing={handleResetPassword}
-              accessibilityLabel="Confirm new password"
-            />
-
-            <Button
-              title="Reset password"
-              loading={loading}
-              disabled={resending}
-              onPress={handleResetPassword}
-              size="lg"
-            />
-
-            <Button
-              title="Resend code"
-              variant="secondary"
-              loading={resending}
-              disabled={loading}
-              onPress={handleResendCode}
-              style={styles.secondaryAction}
-            />
-
-            <View style={styles.footer}>
-              <Pressable
-              disabled={loading || resending}
-              onPress={() => {
-                  clearSecrets();
-                  setError(null);
-                  setStep('request');
-                }}
-                hitSlop={10}
-                style={styles.linkTap}
-              accessibilityRole="button"
-              accessibilityState={{ disabled: loading || resending }}
-                accessibilityLabel="Use a different email"
-              >
-                <Text style={styles.link}>Use a different email</Text>
-              </Pressable>
-              <Text style={styles.footerDot}>·</Text>
-              <Pressable
-                onPress={handleBackToLogin}
-                hitSlop={10}
-                style={styles.linkTap}
-                accessibilityRole="link"
-                accessibilityLabel="Back to sign in"
-              >
-                <Text style={styles.link}>Back to sign in</Text>
-              </Pressable>
-            </View>
-          </View>
-        )}
-      </Screen>
-    </KeyboardAvoidingView>
+        </View>
+      )}
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
   scroll: {
     flexGrow: 1,
     justifyContent: 'center',

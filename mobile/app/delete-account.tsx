@@ -1,7 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  KeyboardAvoidingView,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -120,120 +118,112 @@ export default function DeleteAccountScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.flex}
-    >
-      <Screen bottomInset>
-        <View style={styles.header}>
-          <Pressable
-            onPress={handleBack}
-            hitSlop={8}
-            style={styles.back}
-            accessibilityRole="button"
-            accessibilityLabel="Back"
-          >
-            <Ionicons name="arrow-back" size={20} color={Colors.ink} />
-          </Pressable>
-          <Text style={styles.title}>Delete account</Text>
+    <Screen bottomInset keyboardBehavior="padding">
+      <View style={styles.header}>
+        <Pressable
+          onPress={handleBack}
+          hitSlop={8}
+          style={styles.back}
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+        >
+          <Ionicons name="arrow-back" size={20} color={Colors.ink} />
+        </Pressable>
+        <Text style={styles.title}>Delete account</Text>
+      </View>
+
+      {profileError ? <ErrorState message={profileError} onRetry={loadProfile} /> : null}
+
+      {user === null && !profileError ? (
+        <View style={styles.loadingBlock}>
+          <SkeletonRows count={3} />
         </View>
-
-        {profileError ? <ErrorState message={profileError} onRetry={loadProfile} /> : null}
-
-        {user === null && !profileError ? (
-          <View style={styles.loadingBlock}>
-            <SkeletonRows count={3} />
-          </View>
-        ) : user ? (
-          <View style={styles.content}>
-            <View style={styles.warningBox} accessibilityRole="alert">
-              <View style={styles.warningHeader}>
-                <Ionicons name="warning-outline" size={20} color={Colors.danger} />
-                <Text style={styles.warningTitle}>Permanent data deletion</Text>
-              </View>
-              <Text style={styles.warningBody}>
-                Deleting your account permanently removes your profile, categories, transactions,
-                debts and receivables, recurring schedules, and linked Telegram or Google
-                connections. This action cannot be undone.
-              </Text>
+      ) : user ? (
+        <View style={styles.content}>
+          <View style={styles.warningBox} accessibilityRole="alert">
+            <View style={styles.warningHeader}>
+              <Ionicons name="warning-outline" size={20} color={Colors.danger} />
+              <Text style={styles.warningTitle}>Permanent data deletion</Text>
             </View>
+            <Text style={styles.warningBody}>
+              Deleting your account permanently removes your profile, categories, transactions,
+              debts and receivables, recurring schedules, and linked Telegram or Google
+              connections. This action cannot be undone.
+            </Text>
+          </View>
 
-            {error ? (
-              <Text style={styles.error} accessibilityLiveRegion="polite">
-                {error}
-              </Text>
-            ) : null}
+          {error ? (
+            <Text style={styles.error} accessibilityLiveRegion="polite">
+              {error}
+            </Text>
+          ) : null}
 
-            {requiresPassword ? (
-              <Input
-                label="Account password"
-                placeholder="Enter your password"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-                autoComplete="password"
-                textContentType="password"
-                hint={
-                  user.google_linked
-                    ? 'Password is required even when Google is linked.'
-                    : 'Required to verify account ownership.'
-                }
-                returnKeyType="next"
-                accessibilityLabel="Account password"
-              />
-            ) : (
-              <View style={styles.reauthNote}>
-                <Text style={styles.reauthTitle}>Google verification required</Text>
-                <Text style={styles.reauthBody}>
-                  Because this account uses Google sign-in without a password, you will be asked to
-                  re-authenticate with Google before deletion completes.
-                </Text>
-              </View>
-            )}
-
+          {requiresPassword ? (
             <Input
-              label="Type DELETE to confirm"
-              placeholder="DELETE"
-              value={confirmationText}
-              onChangeText={setConfirmationText}
-              autoCapitalize="characters"
-              autoCorrect={false}
-              returnKeyType="done"
-              accessibilityLabel="Type DELETE to confirm"
-            />
-
-            <View style={styles.checkboxWrap}>
-              <Checkbox
-                checked={acknowledged}
-                onChange={setAcknowledged}
-                label="I understand that all of my financial records and account data will be permanently deleted."
-                disabled={loading}
-              />
-            </View>
-
-            <Button
-              title={
-                requiresPassword
-                  ? 'Permanently delete account'
-                  : 'Verify with Google and delete account'
+              label="Account password"
+              placeholder="Enter your password"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+              autoComplete="password"
+              textContentType="password"
+              hint={
+                user.google_linked
+                  ? 'Password is required even when Google is linked.'
+                  : 'Required to verify account ownership.'
               }
-              variant="danger"
-              icon="trash-outline"
-              loading={loading}
-              onPress={handleDeleteAccount}
-              size="lg"
+              returnKeyType="next"
+              accessibilityLabel="Account password"
+            />
+          ) : (
+            <View style={styles.reauthNote}>
+              <Text style={styles.reauthTitle}>Google verification required</Text>
+              <Text style={styles.reauthBody}>
+                Because this account uses Google sign-in without a password, you will be asked to
+                re-authenticate with Google before deletion completes.
+              </Text>
+            </View>
+          )}
+
+          <Input
+            label="Type DELETE to confirm"
+            placeholder="DELETE"
+            value={confirmationText}
+            onChangeText={setConfirmationText}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            returnKeyType="done"
+            accessibilityLabel="Type DELETE to confirm"
+          />
+
+          <View style={styles.checkboxWrap}>
+            <Checkbox
+              checked={acknowledged}
+              onChange={setAcknowledged}
+              label="I understand that all of my financial records and account data will be permanently deleted."
+              disabled={loading}
             />
           </View>
-        ) : null}
-      </Screen>
-    </KeyboardAvoidingView>
+
+          <Button
+            title={
+              requiresPassword
+                ? 'Permanently delete account'
+                : 'Verify with Google and delete account'
+            }
+            variant="danger"
+            icon="trash-outline"
+            loading={loading}
+            onPress={handleDeleteAccount}
+            size="lg"
+          />
+        </View>
+      ) : null}
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
