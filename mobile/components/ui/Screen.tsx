@@ -1,5 +1,8 @@
 import React from 'react';
 import {
+  KeyboardAvoidingView,
+  KeyboardAvoidingViewProps,
+  Platform,
   RefreshControl,
   ScrollView,
   StyleProp,
@@ -20,6 +23,8 @@ interface ScreenProps {
   contentStyle?: StyleProp<ViewStyle>;
   /** Include the bottom safe-area inset (stack screens). Tabs handle it. */
   bottomInset?: boolean;
+  /** Override height avoidance for keyboards that repeatedly resize secure fields. */
+  keyboardBehavior?: KeyboardAvoidingViewProps['behavior'];
 }
 
 /** Paper background + safe area + optional pull-to-refresh. */
@@ -31,9 +36,11 @@ export function Screen({
   footer,
   contentStyle,
   bottomInset = false,
+  keyboardBehavior = Platform.OS === 'ios' ? 'padding' : 'height',
 }: ScreenProps) {
   const body = scroll ? (
     <ScrollView
+      style={styles.flex}
       contentContainerStyle={[styles.content, contentStyle]}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
@@ -57,8 +64,13 @@ export function Screen({
 
   return (
     <SafeAreaView style={styles.safe} edges={bottomInset ? ['top', 'left', 'right', 'bottom'] : ['top', 'left', 'right']}>
-      {body}
-      {footer}
+      <KeyboardAvoidingView
+        behavior={keyboardBehavior}
+        style={styles.flex}
+      >
+        {body}
+        {footer}
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

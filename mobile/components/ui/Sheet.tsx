@@ -61,7 +61,7 @@ export function Sheet({ visible, onClose, title, children, footer, closeLabel = 
           accessibilityLabel="Tutup panel"
         />
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           pointerEvents="box-none"
           style={styles.dock}
         >
@@ -106,9 +106,9 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: Colors.scrim,
-    justifyContent: 'flex-end',
   },
   dock: {
+    flex: 1,
     justifyContent: 'flex-end',
   },
   panel: {
