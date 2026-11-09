@@ -53,6 +53,47 @@ export interface Transaction {
   note?: string | null;
   asset_name?: string | null;
   transaction_date: string; // YYYY-MM-DD
+  can_edit?: boolean;
+  can_delete?: boolean;
+}
+
+export type TransactionAuditAction = 'update' | 'delete';
+export type TransactionAuditSource = 'api' | 'telegram' | 'system';
+export type TransactionAuditReason =
+  | 'direct'
+  | 'debt_sync'
+  | 'debt_delete'
+  | 'payment_delete';
+
+export interface TransactionSnapshot {
+  id: number;
+  type: TransactionType;
+  category_id?: number | null;
+  category_name?: string | null;
+  amount: number;
+  note?: string | null;
+  asset_name?: string | null;
+  transaction_date: string;
+  source_key?: string | null;
+}
+
+export interface TransactionHistoryEntry {
+  id: number;
+  transaction_id: number;
+  action: TransactionAuditAction;
+  source: TransactionAuditSource;
+  reason: TransactionAuditReason;
+  before: TransactionSnapshot;
+  after: TransactionSnapshot | null;
+  created_at: string; // ISO UTC
+}
+
+export interface TransactionUpdatePayload {
+  amount?: number;
+  category_id?: number | null;
+  note?: string | null;
+  asset_name?: string | null;
+  transaction_date?: string;
 }
 
 export interface QuickInputPreview {

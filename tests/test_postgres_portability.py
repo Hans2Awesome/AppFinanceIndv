@@ -77,13 +77,105 @@ def test_postgres_schema_reaches_current_version(postgres_url):
 
     connection = connect_url(postgres_url)
     try:
-        assert run_migrations(connection) == 7
-        assert run_migrations(connection) == 7
-        assert current_version(connection) == 7
+        assert run_migrations(connection) == 8
+        assert run_migrations(connection) == 8
+        assert current_version(connection) == 8
         versions = connection.execute(
             "SELECT version FROM schema_migrations ORDER BY version"
         ).fetchall()
-        assert [row[0] for row in versions] == [1, 2, 3, 4, 5, 6, 7]
+        assert [row[0] for row in versions] == [1, 2, 3, 4, 5, 6, 7, 8]
+        assert connection.execute(
+            "SELECT relrowsecurity FROM pg_class WHERE oid = 'transaction_audit'::regclass"
+        ).fetchone()[0] is True
+        foreign_keys = connection.execute(
+            "SELECT confrelid::regclass::text FROM pg_constraint "
+            "WHERE conrelid = 'transaction_audit'::regclass AND contype = 'f'"
+        ).fetchall()
+        assert [row[0] for row in foreign_keys] == ["users"]
+    finally:
+        connection.close()
+
+
+def test_copy_retains_deleted_history_and_transaction_id_high_water(postgres_url, tmp_path):
+    """Copied audit IDs must never become IDs of new financial transactions."""
+    from finance_core.db.connection import connect, connect_url
+    from finance_core.db.migrations import run_migrations
+    from finance_core.db.transactions import (
+        create_transaction,
+        delete_transaction,
+        list_transaction_history,
+    )
+    from finance_core.db.users import create_mobile_user
+    from scripts.migrate_sqlite_to_postgres import migrate
+
+    source_path = tmp_path / "copy.sqlite3"
+    source = connect(str(source_path))
+    run_migrations(source)
+    user = create_mobile_user(source, email="copy@example.com", password_hash="unused")
+    deleted = create_transaction(
+        source, user_id=user.id, type="expense", category_id=None, amount=100,
+        note="Historical", asset_name=None, transaction_date="2026-11-09",
+    )
+    delete_transaction(source, user_id=user.id, transaction_id=deleted.id, source="telegram")
+    # SQLite's AUTOINCREMENT remembers IDs beyond both live rows and audit rows.
+    source.execute("UPDATE sqlite_sequence SET seq = 100 WHERE name = 'transactions'")
+    source.commit()
+    source.close()
+
+    assert migrate(source_path, postgres_url) >= 2
+    target = connect_url(postgres_url)
+    try:
+        history = list_transaction_history(target, user_id=user.id)
+        assert len(history) == 1
+        assert history[0]["transaction_id"] == deleted.id
+        assert history[0]["source"] == "telegram"
+        fresh = create_transaction(
+            target, user_id=user.id, type="income", category_id=None, amount=200,
+            note="New", asset_name=None, transaction_date="2026-11-09",
+        )
+        assert fresh.id > 100
+        assert list_transaction_history(target, user_id=user.id, transaction_id=fresh.id) == []
+    finally:
+        target.close()
+
+
+def test_postgres_upgrade_from_seven_preserves_live_transactions(postgres_url, monkeypatch):
+    from finance_core.db import migrations, postgres_schema
+    from finance_core.db.connection import connect_url
+    from finance_core.db.migrations import current_version, run_migrations
+    from finance_core.db.transactions import (
+        create_transaction,
+        list_transaction_history,
+        update_transaction,
+    )
+    from finance_core.db.users import create_mobile_user
+
+    connection = connect_url(postgres_url)
+    try:
+        with monkeypatch.context() as previous_schema:
+            previous_schema.setattr(migrations, "SCHEMA_VERSION", 7)
+            previous_schema.setattr(
+                postgres_schema, "_POSTGRES_MIGRATIONS",
+                {version: statements for version, statements in
+                 postgres_schema._POSTGRES_MIGRATIONS.items() if version <= 7},
+            )
+            assert run_migrations(connection) == 7
+        owner = create_mobile_user(connection, email="upgrade@example.com", password_hash="unused")
+        existing = create_transaction(
+            connection, user_id=owner.id, type="expense", category_id=None, amount=100,
+            note="Before upgrade", asset_name=None, transaction_date="2026-11-09",
+        )
+        connection.commit()
+
+        assert run_migrations(connection) == 8
+        assert run_migrations(connection) == current_version(connection) == 8
+        assert list_transaction_history(connection, user_id=owner.id) == []
+        update_transaction(
+            connection, user_id=owner.id, transaction_id=existing.id, amount=200, source="api",
+        )
+        history = list_transaction_history(connection, user_id=owner.id)
+        assert history[0]["before"]["note"] == "Before upgrade"
+        assert history[0]["after"]["amount"] == 200
     finally:
         connection.close()
 
@@ -110,6 +202,24 @@ def test_postgres_api_round_trip(pg_client):
     report = pg_client.get("/api/reports/daily", params={"target_date": "2026-11-02"})
     assert report.status_code == 200, report.text
     assert report.json()["total_expense"] == 25000
+
+    edited = pg_client.put(
+        f"/api/transactions/{transaction['id']}", json={"amount": 30000, "note": None},
+    )
+    assert edited.status_code == 200
+    assert edited.json()["category_id"] == transaction["category_id"]
+    assert edited.json()["note"] is None
+    assert pg_client.delete(f"/api/transactions/{transaction['id']}").status_code == 204
+    history_response = pg_client.get("/api/transactions/history")
+    assert history_response.status_code == 200
+    history = history_response.json()
+    assert [entry["action"] for entry in history] == ["delete", "update"]
+    assert all(entry["source"] == "api" for entry in history)
+    assert history[1]["before"]["amount"] == 25000
+    assert history[1]["after"]["amount"] == history[0]["before"]["amount"] == 30000
+    assert pg_client.get(
+        "/api/reports/daily", params={"target_date": "2026-11-02"},
+    ).json()["total_expense"] == 0
 
 
 def test_postgres_debt_cash_sync_and_settlement(pg_client):
@@ -237,6 +347,10 @@ def test_postgres_derived_cash_rows_are_locked_and_cleaned_up(pg_client):
 
     remaining = [item["id"] for item in pg_client.get("/api/transactions").json()]
     assert remaining == [manual["id"]]
+    history = pg_client.get("/api/transactions/history").json()
+    assert {entry["transaction_id"] for entry in history} == set(cash_ids)
+    assert all(entry["source"] == "system" and entry["reason"] == "debt_delete"
+               and entry["action"] == "delete" for entry in history)
 
 
 def test_row_iterates_over_values_like_sqlite_row(postgres_url) -> None:

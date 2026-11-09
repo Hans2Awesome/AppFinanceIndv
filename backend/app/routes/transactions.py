@@ -15,6 +15,7 @@ from finance_core.db.transactions import (
     create_transaction,
     delete_transaction,
     get_transaction_by_id,
+    list_transaction_history,
     list_transactions,
     update_transaction,
 )
@@ -32,6 +33,7 @@ from ..models.schemas import (
     QuickInputPreviewResponse,
     QuickInputRequest,
     TransactionCreate,
+    TransactionHistoryResponse,
     TransactionResponse,
     TransactionUpdate,
 )
@@ -39,9 +41,7 @@ from ..models.schemas import (
 router = APIRouter(prefix="/api/transactions", tags=["Transactions"])
 
 
-def _custom_categories(
-    db: sqlite3.Connection, user_id: int
-) -> list[tuple[str, str]]:
+def _custom_categories(db: sqlite3.Connection, user_id: int) -> list[tuple[str, str]]:
     """Kategori kustom milik pengguna, untuk memprioritaskan quick input."""
 
     return [
@@ -49,6 +49,7 @@ def _custom_categories(
         for category in list_categories(db, user_id=user_id)
         if category.is_default == 0
     ]
+
 
 NOT_FOUND_DETAIL = "Transaksi tidak ditemukan."
 
@@ -155,9 +156,7 @@ def confirm_quick_input(
 
     try:
         with db_transaction(db):
-            transaction = save_quick_input_transaction(
-                db, user_id=current_user.id, preview=result
-            )
+            transaction = save_quick_input_transaction(db, user_id=current_user.id, preview=result)
     except TransactionServiceError as error:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -189,6 +188,24 @@ def get_transactions(
         offset=offset,
     )
     return [TransactionResponse.model_validate(item) for item in items]
+
+
+@router.get("/history", response_model=list[TransactionHistoryResponse])
+def get_transaction_history(
+    transaction_id: int | None = Query(None, ge=1),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    current_user: AppUser = Depends(get_current_user),
+    db: sqlite3.Connection = Depends(get_db),
+) -> list[dict]:
+    """List owned snapshots, including deleted transactions."""
+    return list_transaction_history(
+        db,
+        user_id=current_user.id,
+        transaction_id=transaction_id,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/{transaction_id}", response_model=TransactionResponse)
@@ -243,13 +260,8 @@ def edit_transaction(
                 db,
                 user_id=current_user.id,
                 transaction_id=transaction_id,
-                amount=payload.amount,
-                category_id=payload.category_id,
-                transaction_date=(
-                    payload.transaction_date.isoformat() if payload.transaction_date else None
-                ),
-                note=payload.note,
-                asset_name=payload.asset_name,
+                source="api",
+                **payload.model_dump(exclude_unset=True, mode="json"),
             )
     except DerivedTransactionError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
@@ -269,7 +281,7 @@ def remove_transaction(
     try:
         with db_transaction(db):
             deleted = delete_transaction(
-                db, user_id=current_user.id, transaction_id=transaction_id
+                db, user_id=current_user.id, transaction_id=transaction_id, source="api"
             )
     except DerivedTransactionError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error

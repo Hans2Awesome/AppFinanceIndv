@@ -1,6 +1,6 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { useFocusEffect } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Colors, Fonts, Space, Type } from '../../utils/theme';
 import { PeriodReport, Transaction } from '../../types';
 import { ReportSummaryCard } from '../../components/ReportSummaryCard';
@@ -32,8 +32,18 @@ export default function ReportsScreen() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const mountedRef = useRef(true);
+  const requestSeqRef = useRef(0);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const fetchReport = useCallback(async () => {
+    const seq = ++requestSeqRef.current;
     try {
       let reportData: PeriodReport;
       if (period === 'daily') {
@@ -43,6 +53,9 @@ export default function ReportsScreen() {
       } else {
         reportData = await reportApi.getMonthlyReport();
       }
+      if (!mountedRef.current || seq !== requestSeqRef.current) {
+        return;
+      }
       setReport(reportData);
 
       const txs = await transactionApi.getTransactions({
@@ -50,9 +63,15 @@ export default function ReportsScreen() {
         end_date: reportData.end_date,
         limit: 50,
       });
+      if (!mountedRef.current || seq !== requestSeqRef.current) {
+        return;
+      }
       setTransactions(txs);
       setError(null);
     } catch (err) {
+      if (!mountedRef.current || seq !== requestSeqRef.current) {
+        return;
+      }
       setError(describeApiError(err, 'Gagal memuat laporan.'));
     }
   }, [period]);
@@ -119,17 +138,27 @@ export default function ReportsScreen() {
       </FadeIn>
 
       <FadeIn delay={180}>
-        <SectionHeader title={`Daftar transaksi (${transactions.length})`} />
+        <SectionHeader
+          title={`Daftar transaksi (${transactions.length})`}
+          actionLabel="Riwayat perubahan"
+          onAction={() => router.push('/transaction-history')}
+        />
         {transactions.length === 0 ? (
           <EmptyState
             icon="receipt-outline"
             title="Tidak ada transaksi"
             message="Belum ada catatan di periode ini."
+            actionLabel="Riwayat perubahan"
+            onAction={() => router.push('/transaction-history')}
           />
         ) : (
           <View>
             {transactions.map((tx) => (
-              <TransactionCard key={tx.id} transaction={tx} />
+              <TransactionCard
+                key={tx.id}
+                transaction={tx}
+                onPress={() => router.push(`/transaction/${tx.id}`)}
+              />
             ))}
           </View>
         )}

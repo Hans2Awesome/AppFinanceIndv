@@ -26,8 +26,8 @@ def _column_info(connection: sqlite3.Connection, table: str) -> dict[str, sqlite
     return {row[1]: row for row in connection.execute(f"PRAGMA table_info({table})")}
 
 
-def test_schema_version_is_seven() -> None:
-    assert SCHEMA_VERSION == 7
+def test_schema_version_is_eight() -> None:
+    assert SCHEMA_VERSION == 8
 
 
 def test_password_reset_requests_table_has_expected_columns() -> None:
@@ -85,7 +85,7 @@ def test_password_reset_requests_user_foreign_key_cascades() -> None:
     assert remaining == 0
 
 
-def test_migrations_record_version_seven_and_are_idempotent(tmp_path) -> None:
+def test_migrations_record_current_version_and_are_idempotent(tmp_path) -> None:
     connection = connect(str(tmp_path / "fresh.sqlite3"))
     try:
         run_migrations(connection)
@@ -94,8 +94,8 @@ def test_migrations_record_version_seven_and_are_idempotent(tmp_path) -> None:
         versions = [
             row[0] for row in connection.execute("SELECT version FROM schema_migrations")
         ]
-        assert versions == list(range(1, 8))
-        assert current_version(connection) == 7
+        assert versions == list(range(1, 9))
+        assert current_version(connection) == 8
     finally:
         connection.close()
 

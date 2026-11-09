@@ -63,7 +63,7 @@ def handle_transactions_callback(
         transaction_id = _parse_prefixed_id(callback_data, CALLBACK_TRANSACTION_DELETE_CONFIRM_PREFIX)
         try:
             deleted = delete_transaction(
-                connection, user_id=user_id, transaction_id=transaction_id
+                connection, user_id=user_id, transaction_id=transaction_id, source="telegram"
             )
         except DerivedTransactionError:
             return TransactionHandlerResponse(text=_DERIVED_TRANSACTION_TEXT, reply_markup=None)
@@ -152,9 +152,8 @@ def handle_transaction_edit_text(
         user_id=user_id,
         transaction_id=transaction.id,
         amount=amount,
-        category_id=transaction.category_id,
-        transaction_date=transaction.transaction_date,
-        note=note,
+        **({"note": note} if note is not None else {}),
+        source="telegram",
     )
     pending_store.clear(telegram_user_id=telegram_user_id)
     if updated is None:

@@ -126,7 +126,7 @@ def test_postgres_migrations_take_an_advisory_lock() -> None:
 
     from finance_core.db.postgres_schema import _POSTGRES_MIGRATIONS
 
-    assert sorted(_POSTGRES_MIGRATIONS) == [1, 2, 3, 4, 5, 6, 7]
+    assert sorted(_POSTGRES_MIGRATIONS) == [1, 2, 3, 4, 5, 6, 7, 8]
 
     import inspect
 

@@ -44,6 +44,20 @@ TABLES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ),
     ("categories", ("id", "user_id", "type", "name", "aliases", "is_default")),
     (
+        "transaction_audit",
+        (
+            "id",
+            "user_id",
+            "transaction_id",
+            "action",
+            "source",
+            "reason",
+            "before_snapshot",
+            "after_snapshot",
+            "created_at",
+        ),
+    ),
+    (
         "transactions",
         (
             "id",
@@ -119,16 +133,14 @@ def _copy_table(
     if not selected:
         return 0
 
-    rows = source.execute(
-        f"SELECT {', '.join(selected)} FROM {table} ORDER BY id"
-    ).fetchall()
+    rows = source.execute(f"SELECT {', '.join(selected)} FROM {table} ORDER BY id").fetchall()
     if not rows:
         return 0
 
     placeholders = ", ".join("?" for _ in selected)
     target.executemany(
         f"""
-        INSERT INTO {table} ({', '.join(selected)})
+        INSERT INTO {table} ({", ".join(selected)})
         VALUES ({placeholders})
         ON CONFLICT (id) DO NOTHING
         """,
@@ -137,16 +149,17 @@ def _copy_table(
     return len(rows)
 
 
-def _reset_sequence(target, table: str) -> None:
+def _reset_sequence(target, table: str, *, minimum: int = 0) -> None:
     target.execute(
         f"""
         SELECT setval(
             pg_get_serial_sequence('{table}', 'id'),
-            GREATEST(COALESCE(MAX(id), 1), 1),
-            COALESCE(MAX(id), 0) > 0
+            GREATEST(COALESCE(MAX(id), 1), ?, 1),
+            GREATEST(COALESCE(MAX(id), 0), ?) > 0
         )
         FROM {table}
-        """
+        """,
+        (minimum, minimum),
     )
 
 
@@ -188,7 +201,20 @@ def migrate(sqlite_path: Path, database_url: str, *, dry_run: bool = False) -> i
         with transaction(target):
             for table, columns in tables:
                 rows = _copy_table(source, target, table, columns)
-                _reset_sequence(target, table)
+                minimum = 0
+                if table == "transactions":
+                    # Deleted IDs still identify immutable history. Never reuse them.
+                    if _table_exists(source, "sqlite_sequence"):
+                        row = source.execute(
+                            "SELECT seq FROM sqlite_sequence WHERE name = 'transactions'"
+                        ).fetchone()
+                        minimum = row[0] if row else 0
+                    if _table_exists(source, "transaction_audit"):
+                        audited = source.execute(
+                            "SELECT COALESCE(MAX(transaction_id), 0) FROM transaction_audit"
+                        ).fetchone()[0]
+                        minimum = max(minimum, audited)
+                _reset_sequence(target, table, minimum=minimum)
                 copied += rows
                 print(f"{table}: {rows} row(s) copied")
 

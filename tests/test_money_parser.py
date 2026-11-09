@@ -18,6 +18,9 @@ from finance_core.services.money_parser import MoneyParseError, parse_money
         ("25k", 25000),
         ("1.5jt", 1500000),
         ("1,5 juta", 1500000),
+        ("35000 kopi sore", 35000),
+        ("35000 ribuan cerita", 35000),
+        ("35k kopi sore", 35000),
     ],
 )
 def test_parse_money_supports_indonesian_amount_formats(

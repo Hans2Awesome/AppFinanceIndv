@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -28,14 +28,28 @@ export default function DashboardScreen() {
   const [debtSummary, setDebtSummary] = useState<DebtSummary | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const mountedRef = useRef(true);
+  const requestSeqRef = useRef(0);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const loadData = useCallback(async () => {
+    const seq = ++requestSeqRef.current;
     const [profileResult, reportResult, txResult, debtResult] = await Promise.allSettled([
       authApi.getProfile(),
       reportApi.getDailyReport(),
       transactionApi.getTransactions({ limit: 10 }),
       debtApi.getSummary(),
     ]);
+
+    if (!mountedRef.current || seq !== requestSeqRef.current) {
+      return;
+    }
 
     if (profileResult.status === 'fulfilled') setUser(profileResult.value);
     if (reportResult.status === 'fulfilled') setReport(reportResult.value);
@@ -133,8 +147,8 @@ export default function DashboardScreen() {
       <FadeIn delay={240}>
         <SectionHeader
           title="Transaksi terbaru"
-          actionLabel="Lihat semua"
-          onAction={() => router.push('/(tabs)/reports')}
+          actionLabel="Riwayat perubahan"
+          onAction={() => router.push('/transaction-history')}
         />
 
         {transactions.length === 0 ? (
@@ -148,7 +162,11 @@ export default function DashboardScreen() {
         ) : (
           <View>
             {transactions.map((transaction) => (
-              <TransactionCard key={transaction.id} transaction={transaction} />
+              <TransactionCard
+                key={transaction.id}
+                transaction={transaction}
+                onPress={() => router.push(`/transaction/${transaction.id}`)}
+              />
             ))}
           </View>
         )}

@@ -1,5 +1,11 @@
 import { api } from './api';
-import { QuickInputPreview, Transaction, TransactionType } from '../types';
+import {
+  QuickInputPreview,
+  Transaction,
+  TransactionHistoryEntry,
+  TransactionType,
+  TransactionUpdatePayload,
+} from '../types';
 
 export const transactionApi = {
   async getTransactions(params?: {
@@ -18,6 +24,15 @@ export const transactionApi = {
     return res.data;
   },
 
+  async getTransactionHistory(params?: {
+    transaction_id?: number;
+    limit?: number;
+    offset?: number;
+  }): Promise<TransactionHistoryEntry[]> {
+    const res = await api.get<TransactionHistoryEntry[]>('/api/transactions/history', { params });
+    return res.data;
+  },
+
   async createTransaction(payload: {
     type: TransactionType;
     amount: number;
@@ -33,13 +48,7 @@ export const transactionApi = {
 
   async updateTransaction(
     id: number,
-    payload: {
-      amount?: number;
-      category_id?: number;
-      note?: string;
-      asset_name?: string;
-      transaction_date?: string;
-    }
+    payload: TransactionUpdatePayload
   ): Promise<Transaction> {
     const res = await api.put<Transaction>(`/api/transactions/${id}`, payload);
     return res.data;

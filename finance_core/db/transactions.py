@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
+from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime, timezone
+
+from .connection import is_postgres
+
+_UNSET = object()
 
 _SELECT = """
     SELECT t.id, t.user_id, t.type, t.category_id, c.name AS category_name,
@@ -35,6 +42,14 @@ class Transaction:
     transaction_date: str
     category_name: str | None = None
     source_key: str | None = None
+
+    @property
+    def can_edit(self) -> bool:
+        return not is_derived_transaction(self)
+
+    @property
+    def can_delete(self) -> bool:
+        return not is_derived_transaction(self)
 
 
 def is_derived_transaction(transaction: Transaction | None) -> bool:
@@ -219,21 +234,66 @@ def update_transaction(
     user_id: int,
     transaction_id: int,
     amount: int | None = None,
-    category_id: int | None = None,
+    category_id: int | None | object = _UNSET,
     transaction_date: str | None = None,
-    note: str | None = None,
-    asset_name: str | None = None,
+    note: str | None | object = _UNSET,
+    asset_name: str | None | object = _UNSET,
+    source: str = "system",
+    reason: str = "direct",
 ) -> Transaction | None:
     """Update editable fields for an owned transaction."""
 
+    with _locked_mutation(connection, user_id, transaction_id):
+        return _update_locked(
+            connection,
+            user_id=user_id,
+            transaction_id=transaction_id,
+            amount=amount,
+            category_id=category_id,
+            transaction_date=transaction_date,
+            note=note,
+            asset_name=asset_name,
+            source=source,
+            reason=reason,
+        )
+
+
+def _update_locked(
+    connection,
+    *,
+    user_id,
+    transaction_id,
+    amount,
+    category_id,
+    transaction_date,
+    note,
+    asset_name,
+    source,
+    reason,
+):
     current = get_transaction_by_id(connection, user_id=user_id, transaction_id=transaction_id)
     if current is None:
         return None
-    if is_derived_transaction(current):
+    if is_derived_transaction(current) and reason != "debt_sync":
         raise DerivedTransactionError(
             "Transaksi ini berasal dari utang/piutang. Ubah lewat menu Utang."
         )
 
+    values = (
+        amount if amount is not None else current.amount,
+        current.category_id if category_id is _UNSET else category_id,
+        transaction_date if transaction_date is not None else current.transaction_date,
+        current.note if note is _UNSET else note,
+        current.asset_name if asset_name is _UNSET else asset_name,
+    )
+    if values == (
+        current.amount,
+        current.category_id,
+        current.transaction_date,
+        current.note,
+        current.asset_name,
+    ):
+        return current
     connection.execute(
         """
         UPDATE transactions
@@ -241,17 +301,11 @@ def update_transaction(
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ? AND user_id = ?
         """,
-        (
-            amount if amount is not None else current.amount,
-            category_id if category_id is not None else current.category_id,
-            transaction_date if transaction_date is not None else current.transaction_date,
-            note if note is not None else current.note,
-            asset_name if asset_name is not None else current.asset_name,
-            transaction_id,
-            user_id,
-        ),
+        (*values, transaction_id, user_id),
     )
-    return get_transaction_by_id(connection, user_id=user_id, transaction_id=transaction_id)
+    updated = get_transaction_by_id(connection, user_id=user_id, transaction_id=transaction_id)
+    _append_history(connection, current, updated, source, reason)
+    return updated
 
 
 def delete_transaction(
@@ -259,6 +313,8 @@ def delete_transaction(
     *,
     user_id: int,
     transaction_id: int,
+    source: str = "system",
+    reason: str = "direct",
 ) -> bool:
     """Delete one owned transaction.
 
@@ -267,10 +323,15 @@ def delete_transaction(
     ledger. Delete the debt instead, which removes both sides.
     """
 
+    with _locked_mutation(connection, user_id, transaction_id):
+        return _delete_locked(connection, user_id, transaction_id, source, reason)
+
+
+def _delete_locked(connection, user_id, transaction_id, source, reason):
     current = get_transaction_by_id(connection, user_id=user_id, transaction_id=transaction_id)
     if current is None:
         return False
-    if is_derived_transaction(current):
+    if is_derived_transaction(current) and reason not in ("debt_delete", "payment_delete"):
         raise DerivedTransactionError(
             "Transaksi ini berasal dari utang/piutang. Hapus lewat menu Utang."
         )
@@ -279,4 +340,97 @@ def delete_transaction(
         "DELETE FROM transactions WHERE id = ? AND user_id = ?",
         (transaction_id, user_id),
     )
-    return cursor.rowcount > 0
+    if cursor.rowcount != 1:
+        return False
+    _append_history(connection, current, None, source, reason)
+    return True
+
+
+@contextmanager
+def _locked_mutation(connection, user_id, transaction_id):
+    """Lock before reading and roll back failed audit writes without committing."""
+
+    if is_postgres(connection):
+        connection.execute(
+            "SELECT id FROM transactions WHERE id = ? AND user_id = ? FOR UPDATE",
+            (transaction_id, user_id),
+        ).fetchone()
+    else:
+        # A SELECT alone does not start a transaction in sqlite3 legacy mode.
+        connection.execute(
+            "UPDATE transactions SET updated_at = updated_at WHERE id = ? AND user_id = ?",
+            (transaction_id, user_id),
+        )
+    connection.execute("SAVEPOINT transaction_audit_write")
+    try:
+        yield
+    except BaseException:
+        connection.execute("ROLLBACK TO SAVEPOINT transaction_audit_write")
+        connection.execute("RELEASE SAVEPOINT transaction_audit_write")
+        raise
+    else:
+        connection.execute("RELEASE SAVEPOINT transaction_audit_write")
+
+
+def _snapshot(item: Transaction) -> dict:
+    return {
+        field: getattr(item, field)
+        for field in (
+            "id",
+            "type",
+            "category_id",
+            "category_name",
+            "amount",
+            "note",
+            "asset_name",
+            "transaction_date",
+            "source_key",
+        )
+    }
+
+
+def _append_history(connection, before, after, source, reason):
+    connection.execute(
+        """INSERT INTO transaction_audit
+           (user_id, transaction_id, action, source, reason,
+            before_snapshot, after_snapshot, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            before.user_id,
+            before.id,
+            "delete" if after is None else "update",
+            source,
+            reason,
+            json.dumps(_snapshot(before), ensure_ascii=False),
+            json.dumps(_snapshot(after), ensure_ascii=False) if after is not None else None,
+            datetime.now(timezone.utc).isoformat(),
+        ),
+    )
+
+
+def list_transaction_history(
+    connection,
+    *,
+    user_id: int,
+    transaction_id: int | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[dict]:
+    """Read immutable snapshots even after the live transaction is gone."""
+
+    query = "SELECT * FROM transaction_audit WHERE user_id = ?"
+    params = [user_id]
+    if transaction_id is not None:
+        query += " AND transaction_id = ?"
+        params.append(transaction_id)
+    query += " ORDER BY id DESC LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
+    result = []
+    for row in connection.execute(query, tuple(params)).fetchall():
+        item = dict(row)
+        item["before"] = json.loads(item.pop("before_snapshot"))
+        after = item.pop("after_snapshot")
+        item["after"] = json.loads(after) if after else None
+        item.pop("user_id")
+        result.append(item)
+    return result

@@ -512,6 +512,10 @@ def link_telegram_account(
             (user_id, bot_id),
         )
         connection.execute("DELETE FROM categories WHERE user_id = ?", (bot_id,))
+        connection.execute(
+            "UPDATE transaction_audit SET user_id = ? WHERE user_id = ?",
+            (user_id, bot_id),
+        )
         # Hapus baris bot duplikat.
         connection.execute("DELETE FROM users WHERE id = ?", (bot_id,))
 

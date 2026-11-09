@@ -12,7 +12,7 @@ from collections.abc import Callable
 
 from .postgres_schema import run_postgres_migrations
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 
 def _create_core_tables(connection: sqlite3.Connection) -> None:
@@ -385,6 +385,36 @@ def _migration_7(connection: sqlite3.Connection) -> None:
     )
 
 
+def _migration_8(connection: sqlite3.Connection) -> None:
+    """Keep owned transaction history after the live transaction is deleted."""
+
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS transaction_audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            transaction_id INTEGER NOT NULL,
+            action TEXT NOT NULL CHECK (action IN ('update', 'delete')),
+            source TEXT NOT NULL CHECK (source IN ('api', 'telegram', 'system')),
+            reason TEXT NOT NULL CHECK (reason IN ('direct', 'debt_sync', 'debt_delete', 'payment_delete')),
+            before_snapshot TEXT NOT NULL,
+            after_snapshot TEXT,
+            created_at TEXT NOT NULL,
+            CHECK ((action = 'delete' AND after_snapshot IS NULL)
+                OR (action = 'update' AND after_snapshot IS NOT NULL))
+        )
+        """
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_transaction_audit_owner "
+        "ON transaction_audit (user_id, id DESC)"
+    )
+    connection.execute(
+        "CREATE INDEX IF NOT EXISTS idx_transaction_audit_transaction "
+        "ON transaction_audit (user_id, transaction_id, id DESC)"
+    )
+
+
 _MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
     1: _migration_1,
     2: _migration_2,
@@ -393,6 +423,7 @@ _MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
     5: _migration_5,
     6: _migration_6,
     7: _migration_7,
+    8: _migration_8,
 }
 
 

@@ -9,6 +9,7 @@ from datetime import timedelta
 from typing import Optional
 
 from .connection import is_postgres
+from .transactions import delete_transaction, update_transaction
 
 
 @dataclass(frozen=True)
@@ -228,14 +229,15 @@ def sync_derived_debt_transaction(
     yang sama, sehingga saldo kas tidak pernah berselisih dengan utang.
     """
 
-    connection.execute(
-        """
-        UPDATE transactions
-        SET amount = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE user_id = ? AND source_key = ?
-        """,
-        (amount, user_id, f"debt:{user_id}:{debt_id}"),
-    )
+    row = connection.execute(
+        "SELECT id FROM transactions WHERE user_id = ? AND source_key = ?",
+        (user_id, f"debt:{user_id}:{debt_id}"),
+    ).fetchone()
+    if row is not None:
+        update_transaction(
+            connection, user_id=user_id, transaction_id=row["id"],
+            amount=amount, source="system", reason="debt_sync",
+        )
 
 
 def delete_debt(
@@ -250,6 +252,8 @@ def delete_debt(
     cannot leave a stray expense or income row in the report.
     """
 
+    if get_debt_by_id(connection, user_id=user_id, debt_id=debt_id, for_update=True) is None:
+        return False
     payment_ids = [
         row["id"]
         for row in connection.execute(
@@ -263,10 +267,15 @@ def delete_debt(
     )
 
     placeholders = ", ".join("?" for _ in source_keys)
-    connection.execute(
-        f"DELETE FROM transactions WHERE user_id = ? AND source_key IN ({placeholders})",
+    cash_rows = connection.execute(
+        f"SELECT id FROM transactions WHERE user_id = ? AND source_key IN ({placeholders}) ORDER BY id",
         (user_id, *source_keys),
-    )
+    ).fetchall()
+    for row in cash_rows:
+        delete_transaction(
+            connection, user_id=user_id, transaction_id=row["id"],
+            source="system", reason="debt_delete",
+        )
 
     cursor = connection.execute(
         "DELETE FROM debts WHERE id = ? AND user_id = ?",
@@ -309,10 +318,15 @@ def delete_debt_payment(
     payment = _row_to_payment(payment_row)
 
     connection.execute("DELETE FROM debt_payments WHERE id = ?", (payment_id,))
-    connection.execute(
-        "DELETE FROM transactions WHERE user_id = ? AND source_key = ?",
+    cash_row = connection.execute(
+        "SELECT id FROM transactions WHERE user_id = ? AND source_key = ?",
         (user_id, f"debt_payment:{user_id}:{payment_id}"),
-    )
+    ).fetchone()
+    if cash_row is not None:
+        delete_transaction(
+            connection, user_id=user_id, transaction_id=cash_row["id"],
+            source="system", reason="payment_delete",
+        )
 
     new_paid = max(0, debt.paid_amount - payment.amount)
     new_status = "settled" if new_paid >= debt.total_amount else "active"
