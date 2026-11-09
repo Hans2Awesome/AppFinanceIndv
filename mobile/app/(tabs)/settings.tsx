@@ -10,10 +10,24 @@ import { ErrorState } from '../../components/ui/ErrorState';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { FadeIn } from '../../components/ui/FadeIn';
 import { authApi, describeApiError } from '../../services/auth';
+import { LinkGoogleSheet } from '../../components/auth/LinkGoogleSheet';
+import { isGoogleAuthAvailable } from '../../services/googleAuth';
 
 export default function SettingsScreen() {
   const [user, setUser] = useState<User | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [googleAvailable, setGoogleAvailable] = useState(false);
+  const [linkSheetVisible, setLinkSheetVisible] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    isGoogleAuthAvailable().then((ok) => {
+      if (active) setGoogleAvailable(ok);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const loadProfile = async () => {
     try {
@@ -183,6 +197,47 @@ export default function SettingsScreen() {
         </View>
       </FadeIn>
 
+      <FadeIn delay={180}>
+        <Text style={styles.sectionLabel}>Google</Text>
+        <View style={styles.block}>
+          {user?.google_linked ? (
+            <View style={[styles.navRow, styles.lastNavRow]}>
+              <View style={styles.navBody}>
+                <Text style={styles.navTitle}>Google tertaut</Text>
+                <Text style={styles.navHint}>
+                  Kamu bisa masuk memakai akun Google yang sudah ditautkan.
+                </Text>
+              </View>
+              <Ionicons name="checkmark-circle-outline" size={18} color={Colors.inkMuted} />
+            </View>
+          ) : googleAvailable && user?.has_password ? (
+            <Pressable
+              onPress={() => setLinkSheetVisible(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Tautkan akun Google"
+              style={({ pressed }) => [styles.navRow, styles.lastNavRow, pressed && styles.pressed]}
+            >
+              <View style={styles.navBody}>
+                <Text style={styles.navTitle}>Tautkan akun Google</Text>
+                <Text style={styles.navHint}>
+                  Masuk lebih cepat dengan akun Google yang emailnya sama.
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={Colors.inkMuted} />
+            </Pressable>
+          ) : (
+            <View style={[styles.navRow, styles.lastNavRow]}>
+              <View style={styles.navBody}>
+                <Text style={styles.navTitle}>Google belum tersedia</Text>
+                <Text style={styles.navHint}>
+                  Login Google hanya aktif di aplikasi Android versi terbaru.
+                </Text>
+              </View>
+            </View>
+          )}
+        </View>
+      </FadeIn>
+
       <FadeIn delay={210}>
         <Text style={styles.sectionLabel}>Tentang aplikasi</Text>
         <View style={styles.block}>
@@ -200,6 +255,15 @@ export default function SettingsScreen() {
           style={styles.logout}
         />
       </FadeIn>
+
+      <LinkGoogleSheet
+        visible={linkSheetVisible}
+        onClose={() => setLinkSheetVisible(false)}
+        onLinked={(linkedUser) => {
+          setUser(linkedUser);
+          setLinkSheetVisible(false);
+        }}
+      />
     </Screen>
   );
 }

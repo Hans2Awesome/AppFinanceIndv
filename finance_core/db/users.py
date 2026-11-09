@@ -28,6 +28,7 @@ class AppUser:
     currency: str = "IDR"
     token_version: int = 0
     created_at: str | None = None
+    google_sub: str | None = None
 
     @property
     def telegram_linked(self) -> bool:
@@ -35,13 +36,27 @@ class AppUser:
 
         return self.telegram_user_id is not None
 
+    @property
+    def google_linked(self) -> bool:
+        """True bila akun ini sudah memiliki identitas Google."""
+
+        return self.google_sub is not None
+
+    @property
+    def has_password(self) -> bool:
+        """False untuk akun yang hanya bisa masuk lewat Google."""
+
+        return self.password_hash is not None
+
 
 # Alias kept for the Telegram bot's existing imports and tests.
 User = AppUser
 
+GOOGLE_SUB_MAX_LENGTH = 255
+
 _USER_COLUMNS = (
     "id, email, password_hash, first_name, username, "
-    "telegram_user_id, timezone, currency, token_version, created_at"
+    "telegram_user_id, timezone, currency, token_version, created_at, google_sub"
 )
 
 
@@ -58,6 +73,7 @@ def _row_to_user(row: sqlite3.Row) -> AppUser:
         currency=row["currency"],
         token_version=row["token_version"] if "token_version" in keys else 0,
         created_at=row["created_at"] if "created_at" in keys else None,
+        google_sub=row["google_sub"] if "google_sub" in keys else None,
     )
 
 
@@ -79,6 +95,27 @@ def get_user_by_email(connection: sqlite3.Connection, email: str) -> AppUser | N
         (email.strip().lower(),),
     ).fetchone()
     return None if row is None else _row_to_user(row)
+
+
+def get_user_by_google_sub(
+    connection: sqlite3.Connection,
+    google_sub: str,
+) -> AppUser | None:
+    """Fetch a user by their immutable Google subject."""
+
+    row = connection.execute(
+        f"SELECT {_USER_COLUMNS} FROM users WHERE google_sub = ?",
+        (google_sub,),
+    ).fetchone()
+    return None if row is None else _row_to_user(row)
+
+
+def _validate_google_sub(google_sub: str) -> str:
+    if not google_sub:
+        raise ValueError("Google subject is required.")
+    if len(google_sub) > GOOGLE_SUB_MAX_LENGTH:
+        raise ValueError("Google subject is too long.")
+    return google_sub
 
 
 def get_user_by_telegram_id(
@@ -121,6 +158,60 @@ def create_mobile_user(
     if user is None:
         raise RuntimeError("Failed to create mobile user")
     return user
+
+
+def create_google_user(
+    connection: sqlite3.Connection,
+    *,
+    google_sub: str,
+    email: str,
+    first_name: str | None = None,
+    timezone: str = "Asia/Jakarta",
+    currency: str = "IDR",
+) -> AppUser:
+    """Create a passwordless Google user. The caller owns the transaction boundary."""
+
+    validated_sub = _validate_google_sub(google_sub)
+    cursor = connection.execute(
+        """
+        INSERT INTO users (google_sub, email, password_hash, first_name, timezone, currency)
+        VALUES (?, ?, NULL, ?, ?, ?)
+        """,
+        (validated_sub, email.strip().lower(), first_name, timezone, currency),
+    )
+    # Read immediately: PostgreSQL's lazy lastrowid uses lastval(), which the
+    # category inserts below would otherwise replace.
+    user_id = cursor.lastrowid
+    seed_default_categories(connection, user_id)
+
+    user = get_user_by_id(connection, user_id)
+    if user is None:
+        raise RuntimeError("Failed to create Google user")
+    return user
+
+
+def link_google_identity(
+    connection: sqlite3.Connection,
+    *,
+    user_id: int,
+    google_sub: str,
+) -> AppUser | None:
+    """Attach a Google subject only while the account has none.
+
+    Returns the current user. A concurrent caller can win the race, so the route
+    re-reads and compares the stored subject when this update changes no row.
+    """
+
+    validated_sub = _validate_google_sub(google_sub)
+    connection.execute(
+        """
+        UPDATE users
+        SET google_sub = ?
+        WHERE id = ? AND google_sub IS NULL
+        """,
+        (validated_sub, user_id),
+    )
+    return get_user_by_id(connection, user_id)
 
 
 def get_or_create_user(
@@ -309,7 +400,11 @@ def link_telegram_account(
     # Cek apakah telegram_user_id sudah digunakan oleh baris lain (biasanya bot).
     bot_user = get_user_by_telegram_id(connection, telegram_user_id)
     if bot_user is not None and bot_user.id != user_id:
-        if bot_user.email is not None or bot_user.password_hash is not None:
+        if (
+            bot_user.email is not None
+            or bot_user.password_hash is not None
+            or bot_user.google_sub is not None
+        ):
             raise ValueError("Telegram ini sudah terhubung ke akun lain.")
 
         bot_id = bot_user.id

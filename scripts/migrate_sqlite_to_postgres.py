@@ -39,6 +39,7 @@ TABLES: tuple[tuple[str, tuple[str, ...]], ...] = (
             "currency",
             "token_version",
             "created_at",
+            "google_sub",
         ),
     ),
     ("categories", ("id", "user_id", "type", "name", "aliases", "is_default")),

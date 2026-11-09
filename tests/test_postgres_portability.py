@@ -77,13 +77,13 @@ def test_postgres_schema_reaches_current_version(postgres_url):
 
     connection = connect_url(postgres_url)
     try:
-        assert run_migrations(connection) == 5
-        assert run_migrations(connection) == 5
-        assert current_version(connection) == 5
+        assert run_migrations(connection) == 6
+        assert run_migrations(connection) == 6
+        assert current_version(connection) == 6
         versions = connection.execute(
             "SELECT version FROM schema_migrations ORDER BY version"
         ).fetchall()
-        assert [row[0] for row in versions] == [1, 2, 3, 4, 5]
+        assert [row[0] for row in versions] == [1, 2, 3, 4, 5, 6]
     finally:
         connection.close()
 

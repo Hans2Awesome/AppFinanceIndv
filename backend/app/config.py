@@ -23,6 +23,7 @@ class Settings:
     currency: str = "IDR"
     cors_origins: tuple[str, ...] = field(default_factory=lambda: ("*",))
     environment: str = "development"
+    google_web_client_id: str | None = None
     recurring_scheduler_enabled: bool = True
     recurring_scheduler_interval_seconds: int = 30
 
@@ -90,6 +91,7 @@ def get_settings(*, load_dotenv_file: bool = True) -> Settings:
         currency=common.currency,
         cors_origins=cors_origins,
         environment=environment,
+        google_web_client_id=env_value("GOOGLE_WEB_CLIENT_ID", "") or None,
         recurring_scheduler_enabled=_env_bool("RECURRING_SCHEDULER_ENABLED", True),
         recurring_scheduler_interval_seconds=max(
             5,

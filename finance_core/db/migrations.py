@@ -12,7 +12,7 @@ from collections.abc import Callable
 
 from .postgres_schema import run_postgres_migrations
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 def _create_core_tables(connection: sqlite3.Connection) -> None:
@@ -351,12 +351,30 @@ def _migration_5(connection: sqlite3.Connection) -> None:
     )
 
 
+def _migration_6(connection: sqlite3.Connection) -> None:
+    """Add the immutable Google subject used for Android sign-in.
+
+    SQLite cannot add a UNIQUE column in place, so the column is plain and the
+    uniqueness comes from a partial index that ignores bot-only users.
+    """
+
+    _add_column_if_missing(connection, "users", "google_sub", "TEXT")
+    connection.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_sub
+            ON users (google_sub)
+            WHERE google_sub IS NOT NULL
+        """
+    )
+
+
 _MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
     1: _migration_1,
     2: _migration_2,
     3: _migration_3,
     4: _migration_4,
     5: _migration_5,
+    6: _migration_6,
 }
 
 

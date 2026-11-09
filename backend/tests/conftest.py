@@ -16,6 +16,8 @@ def _reset_login_limiter() -> None:
     """Keep auth throttling state from leaking between tests."""
 
     from backend.app.auth.rate_limit import (
+        google_link_limiter,
+        google_login_limiter,
         login_limiter,
         refresh_limiter,
         register_limiter,
@@ -24,3 +26,5 @@ def _reset_login_limiter() -> None:
     login_limiter._buckets.clear()
     refresh_limiter._buckets.clear()
     register_limiter._buckets.clear()
+    google_login_limiter._buckets.clear()
+    google_link_limiter._buckets.clear()

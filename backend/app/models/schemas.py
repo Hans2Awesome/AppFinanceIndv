@@ -39,6 +39,14 @@ class RefreshRequest(BaseModel):
     refresh_token: str = Field(..., min_length=1)
 
 
+class GoogleAuthRequest(BaseModel):
+    id_token: str = Field(..., min_length=1, max_length=16384)
+
+
+class GoogleLinkRequest(GoogleAuthRequest):
+    password: str = Field(..., min_length=1, max_length=128)
+
+
 class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -49,6 +57,8 @@ class UserResponse(BaseModel):
     currency: str = "IDR"
     created_at: Optional[str] = None
     telegram_linked: bool = False
+    google_linked: bool = False
+    has_password: bool = False
 
 
 class TokenResponse(BaseModel):

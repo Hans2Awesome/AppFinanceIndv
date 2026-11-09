@@ -50,16 +50,56 @@ cd mobile
 cp .env.example .env
 # Physical device: use your machine's LAN IP, not localhost
 # EXPO_PUBLIC_API_URL=http://192.168.1.10:8000
+# Google sign-in (Android native build only):
+# EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID=<web client id>.apps.googleusercontent.com
 yarn install
 npx expo start
 ```
 
 Test options:
 
-- **Physical device**: install Expo Go and scan the QR code.
+- **Physical device**: install Expo Go and scan the QR code. Email/password
+  works here; Google controls stay hidden because the native module is absent.
 - **Web**: press `w`.
 - **Android emulator**: press `a`.
 - **iOS simulator**: press `i` (macOS only).
+
+### 2a. Google sign-in on Android
+
+Google needs a development build (or an APK), not Expo Go.
+
+1. In Google Cloud, create one **Web** OAuth client and one **Android** client
+   for package `com.financeapp.mobile` with the SHA-1 of the signing certificate
+   you actually build with. EAS preview/debug builds use a different keystore
+   from Play App Signing, so register every fingerprint you ship.
+2. Set the same Web client ID in the backend `GOOGLE_WEB_CLIENT_ID` and in the
+   mobile build `EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID`. For a local build put it in
+   `mobile/.env`; for EAS put it in the EAS environment used by that profile
+   (`eas env:create`), not in git.
+3. Replace the placeholder `iosUrlScheme` in `mobile/app.json` with the real
+   reversed iOS client ID before any iOS work, and set an iOS bundle identifier
+   when iOS ships. Android ignores that value, but the current config plugin
+   refuses to prebuild without it.
+4. Build and install:
+
+```bash
+npx eas-cli build --platform android --profile preview
+# or, for a local development client:
+npx expo prebuild --platform android
+yarn android
+```
+
+The `development` EAS profile inherits the API URL in `eas.json`, which points at
+the current deployed API. Override `EXPO_PUBLIC_API_URL` for that profile before
+testing against a local backend, so a dev build never writes into production
+data.
+
+5. Sign in with Google, then check the existing password account flow still
+   works. Linking Google is only offered in Settings for accounts that have a
+   password and the same verified email.
+
+Do not commit client secrets or signing keys. The Web client ID is public and
+safe to ship; a Google client secret is not used by this flow.
 
 ### 3. Auth flow
 
