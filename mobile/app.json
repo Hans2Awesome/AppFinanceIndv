@@ -6,9 +6,15 @@
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "financeapp",
+    "icon": "./assets/images/icon.png",
     "android": {
       "package": "com.financeapp.mobile",
-      "versionCode": 1
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#171A16",
+        "monochromeImage": "./assets/images/monochrome-icon.png"
+      }
     },
     "plugins": [
       "expo-router",
