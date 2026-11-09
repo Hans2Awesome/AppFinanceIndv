@@ -60,11 +60,13 @@ async function refreshSession(): Promise<boolean> {
         { timeout: 15000, headers: { 'Content-Type': 'application/json' } }
       )
       .then(async (response) => {
+        // A response started before logout must never resurrect that session.
+        if (getRefreshToken() !== token) return false;
         await saveSession(response.data);
         return true;
       })
       .catch(async () => {
-        await clearSession();
+        if (getRefreshToken() === token) await clearSession();
         return false;
       })
       .finally(() => {

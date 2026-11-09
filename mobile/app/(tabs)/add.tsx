@@ -1,5 +1,6 @@
+import { AppAlert as Alert } from '../../services/appAlert';
 import React, { useState, useEffect } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { Colors, Fonts, Space, Type } from '../../utils/theme';
 import { Category, TransactionType } from '../../types';

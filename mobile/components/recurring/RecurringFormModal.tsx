@@ -1,6 +1,6 @@
+import { AppAlert as Alert } from '../../services/appAlert';
 import React, { useEffect, useState } from 'react';
 import {
-  Alert,
   Pressable,
   ScrollView,
   StyleSheet,

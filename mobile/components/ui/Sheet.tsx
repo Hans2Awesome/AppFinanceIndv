@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useId, useRef, useSyncExternalStore } from 'react';
 import {
   Animated,
   KeyboardAvoidingView,
@@ -12,6 +12,11 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Fonts, Motion, Radius, Shadow, Space } from '../../utils/theme';
 import { useReducedMotion } from '../../utils/motion';
+import { getAppLockState, subscribeAppLock } from '../../services/appLock';
+import { clearSession, isAuthenticated, subscribeSession } from '../../services/session';
+import { AppLockView } from '../security/AppLockView';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { AppAlertHost } from '../security/AppAlertHost';
 
 interface SheetProps {
   visible: boolean;
@@ -28,6 +33,10 @@ interface SheetProps {
 export function Sheet({ visible, onClose, title, children, footer, closeLabel = 'Tutup' }: SheetProps) {
   const reduced = useReducedMotion();
   const enter = useRef(new Animated.Value(0)).current;
+  const lock = useSyncExternalStore(subscribeAppLock, getAppLockState, getAppLockState);
+  const authenticated = useSyncExternalStore(subscribeSession, isAuthenticated, isAuthenticated);
+  const gated = authenticated && (!lock.ready || lock.locked || lock.covered);
+  const host = useId();
 
   useEffect(() => {
     if (!visible) {
@@ -50,10 +59,13 @@ export function Sheet({ visible, onClose, title, children, footer, closeLabel = 
       visible={visible}
       transparent
       animationType="fade"
-      onRequestClose={onClose}
+      onRequestClose={() => { if (!gated) onClose(); }}
       statusBarTranslucent
     >
       <View style={styles.root}>
+      <View style={styles.modalBody} pointerEvents={gated ? 'none' : 'auto'}
+        accessibilityElementsHidden={gated}
+        importantForAccessibility={gated ? 'no-hide-descendants' : 'auto'}>
         <Pressable
           style={StyleSheet.absoluteFill}
           onPress={onClose}
@@ -98,11 +110,22 @@ export function Sheet({ visible, onClose, title, children, footer, closeLabel = 
           </Animated.View>
         </KeyboardAvoidingView>
       </View>
+      {gated ? (
+        <View style={styles.lockCover} accessibilityViewIsModal>
+          <SafeAreaProvider>
+            <AppLockView onSignOut={clearSession} />
+          </SafeAreaProvider>
+        </View>
+      ) : null}
+      <AppAlertHost host={host} active={visible} />
+      </View>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  modalBody: { flex: 1 },
+  lockCover: { ...StyleSheet.absoluteFill, backgroundColor: Colors.paper, zIndex: 100 },
   root: {
     flex: 1,
     backgroundColor: Colors.scrim,

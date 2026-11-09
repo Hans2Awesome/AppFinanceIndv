@@ -1,5 +1,6 @@
+import { AppAlert as Alert } from '../services/appAlert';
 import React, { useCallback, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Fonts, Space, Type } from '../utils/theme';

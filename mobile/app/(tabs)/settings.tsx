@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { AppAlert as Alert } from '../../services/appAlert';
+import React, { useState, useEffect, useSyncExternalStore } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Fonts, Space, Type } from '../../utils/theme';
@@ -12,12 +13,18 @@ import { FadeIn } from '../../components/ui/FadeIn';
 import { authApi, describeApiError } from '../../services/auth';
 import { LinkGoogleSheet } from '../../components/auth/LinkGoogleSheet';
 import { isGoogleAuthAvailable } from '../../services/googleAuth';
+import { getAppLockState, subscribeAppLock } from '../../services/appLock';
 
 export default function SettingsScreen() {
   const [user, setUser] = useState<User | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [googleAvailable, setGoogleAvailable] = useState(false);
   const [linkSheetVisible, setLinkSheetVisible] = useState(false);
+  const appLock = useSyncExternalStore(
+    subscribeAppLock,
+    getAppLockState,
+    getAppLockState
+  );
 
   useEffect(() => {
     let active = true;
@@ -242,10 +249,33 @@ export default function SettingsScreen() {
         <Text style={styles.sectionLabel}>Account security</Text>
         <View style={styles.block}>
           <Pressable
+            onPress={() => router.push('/app-lock' as never)}
+            accessibilityRole="button"
+            accessibilityLabel="Kunci aplikasi"
+            style={({ pressed }) => [styles.navRow, pressed && styles.pressed]}
+          >
+            <View style={styles.navBody}>
+              <Text style={styles.navTitle}>Kunci aplikasi</Text>
+              <Text style={styles.navHint}>
+                {!appLock.ready
+                  ? 'Memuat status keamanan perangkat...'
+                  : !appLock.supported
+                  ? 'Tidak tersedia di perangkat ini.'
+                  : appLock.enabled
+                  ? appLock.biometricsEnabled
+                    ? 'Aktif · PIN 6 digit dan sidik jari / biometrik'
+                    : 'Aktif · PIN 6 digit'
+                  : 'Nonaktif · Lindungi aplikasi dengan PIN 6 digit'}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={Colors.inkMuted} />
+          </Pressable>
+
+          <Pressable
             onPress={() => router.push('/change-password')}
             accessibilityRole="button"
             accessibilityLabel="Change password"
-            style={({ pressed }) => [styles.navRow, pressed && styles.pressed]}
+            style={({ pressed }) => [styles.navRow, styles.lastNavRow, pressed && styles.pressed]}
           >
             <View style={styles.navBody}>
               <Text style={styles.navTitle}>Change password</Text>

@@ -2,6 +2,7 @@ import { AxiosError } from 'axios';
 import { api } from './api';
 import { signOutGoogle } from './googleAuth';
 import { clearSession, saveSession } from './session';
+import { resetAppLockAfterSignIn } from './appLock';
 import {
   AuthResponse,
   ForgotPasswordResponse,
@@ -16,12 +17,14 @@ export const authApi = {
     first_name?: string;
   }): Promise<AuthResponse> {
     const res = await api.post<AuthResponse>('/api/auth/register', params);
+    await resetAppLockAfterSignIn();
     await saveSession(res.data);
     return res.data;
   },
 
   async login(params: { email: string; password: string }): Promise<AuthResponse> {
     const res = await api.post<AuthResponse>('/api/auth/login', params);
+    await resetAppLockAfterSignIn();
     await saveSession(res.data);
     return res.data;
   },
@@ -35,6 +38,7 @@ export const authApi = {
     const res = await api.post<AuthResponse>('/api/auth/google', {
       id_token: params.idToken,
     });
+    await resetAppLockAfterSignIn();
     await saveSession(res.data);
     return res.data;
   },
