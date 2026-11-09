@@ -318,6 +318,8 @@ Integrated into local `main` on 2026-11-09, before `feature/android-keyboard-lay
 
 One plan covers the whole feature because mobile configuration, new auth endpoints, user schema, identity policy and acceptance criteria are coupled. There are no sibling plans or independent merge order.
 
+Post-integration verification on 2026-11-09: with user authorization, PostgreSQL 16.15 was installed for tests only. A disposable cluster used a private Unix socket with peer authentication, no TCP listener, 32MB shared buffers, and disabled parallel query workers. All six PostgreSQL portability tests passed; the full suite passed with 308 tests and no skips. Ruff and TypeScript also passed. Test schemas were cleaned up (zero remaining), the cluster was stopped, and the system service was disabled. Production database configuration and repository `.env` files were not changed. Native/OAuth/device gates remain pending independently of this database verification.
+
 Likely overlaps with other work: `finance_core/db/users.py`, both migration files, `backend/app/routes/auth.py`, `schemas.py`, mobile auth/Settings screens, dependency manifests and Yarn lockfile. Rebase/review any overlapping auth change before execution; if another migration lands first, use the next unused version consistently and rerun both upgrade suites.
 
 If this work later becomes multiple parallel branches, branches must not self-merge. User runs `/integrate` in a builder session from main after all branches are verified; integrate schema/backend before Android client changes.
