@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { Colors, Space, Type } from '../../utils/theme';
 import { Input } from '../../components/ui/Input';
@@ -43,97 +43,89 @@ export default function RegisterScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.flex}
-    >
-      <Screen contentStyle={styles.scroll}>
-        <View style={styles.brand}>
-          <Text style={styles.wordmark}>Bot04</Text>
-          <View style={styles.brandRule} />
-          <Text style={styles.tagline}>Buku kas pribadi</Text>
+    <Screen contentStyle={styles.scroll}>
+      <View style={styles.brand}>
+        <Text style={styles.wordmark}>Bot04</Text>
+        <View style={styles.brandRule} />
+        <Text style={styles.tagline}>Buku kas pribadi</Text>
+      </View>
+
+      <View>
+        <Text style={styles.title}>Buat akun</Text>
+
+        {error ? (
+          <Text style={styles.error} accessibilityLiveRegion="polite">
+            {error}
+          </Text>
+        ) : null}
+
+        <Input
+          label="Nama"
+          placeholder="Nama panggilan"
+          value={firstName}
+          onChangeText={setFirstName}
+          autoCapitalize="words"
+          textContentType="givenName"
+          returnKeyType="next"
+        />
+
+        <Input
+          label="Email"
+          placeholder="nama@email.com"
+          value={email}
+          onChangeText={setEmail}
+          autoCapitalize="none"
+          autoComplete="email"
+          textContentType="emailAddress"
+          keyboardType="email-address"
+          returnKeyType="next"
+        />
+
+        <Input
+          label="Password"
+          placeholder="Minimal 6 karakter"
+          value={password}
+          onChangeText={setPassword}
+          secureTextEntry
+          autoComplete="new-password"
+          textContentType="newPassword"
+          hint="Minimal 6 karakter"
+          returnKeyType="done"
+          onSubmitEditing={handleRegister}
+        />
+
+        <Button
+          title="Daftar"
+          loading={loading}
+          onPress={handleRegister}
+          size="lg"
+          disabled={googleBusy}
+        />
+
+        <GoogleAuthAction
+          disabled={loading}
+          onBusyChange={setGoogleBusy}
+          onError={(message) => setError(message)}
+        />
+
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>Sudah punya akun?</Text>
+          <Pressable
+            onPress={() => router.push('/(auth)/login')}
+            hitSlop={10}
+            style={styles.linkTap}
+            accessibilityRole="link"
+            accessibilityLabel="Masuk ke akun"
+          >
+            <Text style={styles.link}>Masuk</Text>
+          </Pressable>
         </View>
-
-        <View>
-          <Text style={styles.title}>Buat akun</Text>
-
-          {error ? (
-            <Text style={styles.error} accessibilityLiveRegion="polite">
-              {error}
-            </Text>
-          ) : null}
-
-          <Input
-            label="Nama"
-            placeholder="Nama panggilan"
-            value={firstName}
-            onChangeText={setFirstName}
-            autoCapitalize="words"
-            textContentType="givenName"
-            returnKeyType="next"
-          />
-
-          <Input
-            label="Email"
-            placeholder="nama@email.com"
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            autoComplete="email"
-            textContentType="emailAddress"
-            keyboardType="email-address"
-            returnKeyType="next"
-          />
-
-          <Input
-            label="Password"
-            placeholder="Minimal 6 karakter"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            autoComplete="new-password"
-            textContentType="newPassword"
-            hint="Minimal 6 karakter"
-            returnKeyType="done"
-            onSubmitEditing={handleRegister}
-          />
-
-          <Button
-            title="Daftar"
-            loading={loading}
-            onPress={handleRegister}
-            size="lg"
-            disabled={googleBusy}
-          />
-
-          <GoogleAuthAction
-            disabled={loading}
-            onBusyChange={setGoogleBusy}
-            onError={(message) => setError(message)}
-          />
-
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>Sudah punya akun?</Text>
-            <Pressable
-              onPress={() => router.push('/(auth)/login')}
-              hitSlop={10}
-              style={styles.linkTap}
-              accessibilityRole="link"
-              accessibilityLabel="Masuk ke akun"
-            >
-              <Text style={styles.link}>Masuk</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Screen>
-    </KeyboardAvoidingView>
+      </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: {
-    flex: 1,
-  },
   scroll: {
     flexGrow: 1,
     justifyContent: 'center',

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Colors, Space, Type } from '../../utils/theme';
 import { User } from '../../types';
 import { authApi, describeApiError } from '../../services/auth';
@@ -81,33 +81,43 @@ export function LinkGoogleSheet({ visible, onClose, onLinked }: LinkGoogleSheetP
         </>
       }
     >
-      <Text style={styles.body}>
-        Masukkan kata sandi akun ini, lalu pilih akun Google dengan email yang sama.
-        Setelah tertaut, kamu bisa masuk lewat Google.
-      </Text>
-
-      {error ? (
-        <Text style={styles.error} accessibilityLiveRegion="polite">
-          {error}
+      <ScrollView
+        style={styles.scroll}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <Text style={styles.body}>
+          Masukkan kata sandi akun ini, lalu pilih akun Google dengan email yang sama.
+          Setelah tertaut, kamu bisa masuk lewat Google.
         </Text>
-      ) : null}
 
-      <View style={styles.field}>
-        <Input
-          label="Kata sandi"
-          placeholder="Kata sandi akun kamu"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          autoComplete="password"
-          textContentType="password"
-        />
-      </View>
+        {error ? (
+          <Text style={styles.error} accessibilityLiveRegion="polite">
+            {error}
+          </Text>
+        ) : null}
+
+        <View style={styles.field}>
+          <Input
+            label="Kata sandi"
+            placeholder="Kata sandi akun kamu"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            autoComplete="password"
+            textContentType="password"
+          />
+        </View>
+      </ScrollView>
     </Sheet>
   );
 }
 
 const styles = StyleSheet.create({
+  scroll: {
+    flexGrow: 0,
+    flexShrink: 1,
+  },
   body: {
     ...Type.body,
     color: Colors.inkSoft,
