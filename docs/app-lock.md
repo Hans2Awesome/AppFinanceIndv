@@ -6,13 +6,27 @@ PIN and a successful native biometric prompt. PIN remains the fallback when
 biometrics are unavailable or cancelled. This setting affects this installation
 only; it does not change the account password or other devices.
 
+### Add a pattern
+
+After creating a PIN, enter the current PIN and open **Pola kunci (3x3)** on the
+same settings screen. Draw a pattern and repeat it in the confirmation grid,
+then select **Aktifkan pola kunci**. Connect 4-9 distinct points. Drag across the
+grid, or select **Ketuk titik** to enter points sequentially with accessible
+buttons. Straight jumps automatically include an unvisited midpoint.
+
+On the lock screen, select **Gunakan pola kunci**, enter the pattern, and press
+**Buka kunci dengan pola**. Submission is never automatic. PIN remains the
+default and is always available as fallback. Changing/removing the pattern
+requires the current PIN, not merely a successful pattern unlock.
+
 ## Behavior
 
 - Cold launch and background transitions lock authenticated financial screens.
   Inactive transitions cover content; a native biometric prompt can continue
   through its own inactive event, but not through a background event.
 - Change PIN, disable lock, and biometric preference changes require the
-  current PIN. Five incorrect PINs impose a persisted 30-second cooldown.
+  current PIN. Five incorrect PIN/pattern attempts impose a persisted 30-second
+  cooldown shared by both methods; switching methods cannot reset it.
 - **Lupa PIN** signs out locally. A successful fresh password/Google sign-in
   clears the previous device lock. Enable a new PIN afterward. Token refresh and
   password changes do not silently remove the lock.
@@ -28,6 +42,11 @@ over a domain-separated secret and PIN. The PIN itself is never persisted,
 logged, or sent to the API. The OS-encrypted SecureStore, not a short PIN hash
 alone, protects the record. This is a local privacy gate, not encrypted financial
 storage or protection against rooted devices or malicious runtime modification.
+The optional pattern verifier has its own random 256-bit secret and SHA-256
+domain (`finance.appLock.pattern.v1`), independent of the PIN verifier. Plain
+point sequences are never persisted or sent. Existing PIN-only records remain
+valid. Corrupt pattern fields fail closed instead of silently disabling pattern
+protection. Simple patterns remain easier to observe or guess than random PINs.
 
 Storage read/write failures and malformed records fail closed. The lock screen
 offers storage retry or sign-out recovery. Settings writes and unlock proofs
@@ -70,21 +89,37 @@ machine to test all features; do not build APKs on this VPS.
    sign-in recovery, and logout during an in-flight token refresh. With SwiftKey
    open, verify every PIN field and action remains reachable.
 
+For patterns, test setup mismatch, drag and sequential taps, automatic skipped
+midpoints, clear/re-entry, screen-reader controls, and PIN fallback. Mix wrong
+PIN and pattern attempts to verify the shared cooldown persists after restart.
+Background while drawing or confirming, then verify transient input is cleared.
+Change the PIN and verify the existing pattern still works. Remove the pattern
+with the current PIN and verify pattern unlock is no longer offered.
+
 No backend migration or production database access is required for this feature.
 
 ## Automated verification
 
-- Mobile tests: 60 passed (41 app-lock cases plus existing security/history tests).
+- Mobile tests after pattern enhancement: 100 passed, covering pattern helpers,
+  shared cooldown, persistence, legacy records, stale proofs, recovery, and
+  JavaScript grid interaction contracts. Stubbed responder tests do not validate
+  native gestures, real layout, or screen-reader navigation.
 - TypeScript: `tsc --noEmit` passed after ignored Expo route-type regeneration.
 - Expo public configuration resolved successfully with dotenv disabled.
-- Android JavaScript/Hermes export passed with two Metro workers and a dummy API
+- Android and iOS JavaScript/Hermes exports passed with two Metro workers and a dummy API
   URL. This is a bundle check, not an APK/native build or device test.
-- Python regression suite: 414 passed, 9 skipped without a PostgreSQL test URL.
+- Prior PIN/biometric verification: Python regression suite 414 passed, 9 skipped
+  without a PostgreSQL test URL. Pattern changes touch only mobile code and docs.
   No Python/backend behavior changed. Ruff passed; the suite still reports its
   existing Starlette/httpx deprecation warning.
 - Security review findings were fixed and rechecked, including stale token
   writes, cancelled disable recovery, stale pending-marker cleanup, and protected
   confirmation dialogs. Final inspected paths have no remaining blockers.
+- Pattern security review found no blockers in credential hashing, canonical
+  validation, shared cooldown, lifecycle invalidation, or backward compatibility.
+  Drawing starts only on a point, so empty grid areas remain available for
+  scrolling without clearing a drafted pattern.
 
-Fingerprint sensor behavior, OS screenshots, recent-app previews, native-sheet
-layering, and keyboard navigation still require physical-device acceptance.
+Pattern gestures, screen-reader behavior, fingerprint sensors, OS screenshots,
+recent-app previews, native-sheet layering, and keyboard navigation still require
+physical-device acceptance.

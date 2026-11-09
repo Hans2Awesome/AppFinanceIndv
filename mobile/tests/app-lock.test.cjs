@@ -17,6 +17,9 @@ const root = path.join(__dirname, '..');
 const SERVICE_PATH = path.join(root, 'services/appLock.ts');
 const PIN = '246813';
 const NEXT_PIN = '135792';
+const PATTERN = Object.freeze([0, 1, 2, 5]);
+const NEXT_PATTERN = Object.freeze([6, 3, 0, 1, 2]);
+const WRONG_PATTERN = Object.freeze([0, 4, 8, 7]);
 
 function deferred() {
   let resolve;
@@ -204,7 +207,7 @@ function createCrypto(context) {
     'SHA-384': 'sha384',
     'SHA-512': 'sha512',
   };
-  const calls = { random: [], digest: [] };
+  const calls = { random: [], digest: [], digestData: [] };
   let digestGate = null;
 
   function randomBytes(size) {
@@ -244,6 +247,7 @@ function createCrypto(context) {
     },
     async digestStringAsync(algorithm, data, options) {
       calls.digest.push(algorithm);
+      calls.digestData.push(typeof data === 'string' ? data : Buffer.from(data).toString());
       await waitForDigest();
       const buffer = hash(algorithm, typeof data === 'string' ? data : Buffer.from(data)).digest();
       return options?.encoding === 'base64' ? buffer.toString('base64') : buffer.toString('hex');
@@ -270,33 +274,29 @@ function createCrypto(context) {
   };
 }
 
+function resolveLocalModule(fromFile, request) {
+  const base = path.resolve(path.dirname(fromFile), request);
+  const candidates = [
+    base,
+    `${base}.ts`,
+    `${base}.tsx`,
+    `${base}.js`,
+    `${base}.cjs`,
+    path.join(base, 'index.ts'),
+    path.join(base, 'index.tsx'),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate;
+  }
+  throw new Error(`Cannot resolve local module '${request}' from ${fromFile}`);
+}
+
 function loadService({ store, clock, localAuth, missing, os = 'android' }) {
   const logs = [];
   const required = [];
+  const moduleCache = new Map();
 
-  const sandbox = {
-    exports: {},
-    module: { exports: {} },
-    __DEV__: false,
-    process: { env: {} },
-    console: {
-      log: (...args) => logs.push(args),
-      info: (...args) => logs.push(args),
-      warn: (...args) => logs.push(args),
-      error: (...args) => logs.push(args),
-      debug: (...args) => logs.push(args),
-    },
-    setTimeout,
-    clearTimeout,
-    setInterval,
-    clearInterval,
-    setImmediate,
-    Date: clock.Date,
-  };
-  sandbox.global = sandbox;
-  sandbox.globalThis = sandbox;
-
-  const cryptoApi = createCrypto(sandbox);
+  const cryptoApi = createCrypto({ Uint8Array });
   const screenCapture = {
     async preventScreenCaptureAsync() {},
     async allowScreenCaptureAsync() {},
@@ -305,8 +305,7 @@ function loadService({ store, clock, localAuth, missing, os = 'android' }) {
     },
   };
 
-  sandbox.require = (name) => {
-    required.push(name);
+  function nativeRequire(name) {
     switch (name) {
       case 'react-native':
         return {
@@ -331,18 +330,55 @@ function loadService({ store, clock, localAuth, missing, os = 'android' }) {
       default:
         throw new Error(`Unexpected module in app lock service: ${name}`);
     }
-  };
+  }
 
-  const source = fs.readFileSync(SERVICE_PATH, 'utf8');
-  const javascript = ts.transpileModule(source, {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, esModuleInterop: false },
-  }).outputText;
-  vm.runInNewContext(javascript, sandbox, { filename: SERVICE_PATH });
-  const exported = Object.keys(sandbox.module.exports).length
-    ? sandbox.module.exports
-    : sandbox.exports;
+  function evaluate(file) {
+    if (moduleCache.has(file)) return moduleCache.get(file);
 
-  return { module: exported, crypto: cryptoApi, logs, required };
+    const sandbox = {
+      exports: {},
+      module: { exports: {} },
+      __DEV__: false,
+      process: { env: {} },
+      console: {
+        log: (...args) => logs.push(args),
+        info: (...args) => logs.push(args),
+        warn: (...args) => logs.push(args),
+        error: (...args) => logs.push(args),
+        debug: (...args) => logs.push(args),
+      },
+      setTimeout,
+      clearTimeout,
+      setInterval,
+      clearInterval,
+      setImmediate,
+      Date: clock.Date,
+    };
+    sandbox.global = sandbox;
+    sandbox.globalThis = sandbox;
+    sandbox.require = (name) => {
+      required.push(name);
+      // The pattern helpers live in a local TypeScript module. Transpile it on
+      // demand with the same native fakes instead of teaching the test a copy.
+      if (name.startsWith('.')) {
+        return evaluate(resolveLocalModule(file, name));
+      }
+      return nativeRequire(name);
+    };
+
+    const source = fs.readFileSync(file, 'utf8');
+    const javascript = ts.transpileModule(source, {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, esModuleInterop: false },
+    }).outputText;
+    vm.runInNewContext(javascript, sandbox, { filename: file });
+    const exported = Object.keys(sandbox.module.exports).length
+      ? sandbox.module.exports
+      : sandbox.exports;
+    moduleCache.set(file, exported);
+    return exported;
+  }
+
+  return { module: evaluate(SERVICE_PATH), crypto: cryptoApi, logs, required };
 }
 
 function createHarness(options = {}) {
@@ -516,6 +552,18 @@ async function lock(harness) {
   harness.module.handleAppLockState('active');
   await flush();
   assert.equal(harness.state().locked, true);
+}
+
+function storedRecord(harness) {
+  const raw = harness.store.data.get('finance.appLock.v1');
+  return raw === undefined ? null : JSON.parse(raw);
+}
+
+async function preparePattern(harness, pattern = PATTERN, pin = PIN) {
+  await prepareUnlocked(harness, pin);
+  await harness.module.setAppLockPattern(pin, pattern);
+  assert.equal(harness.state().patternEnabled, true);
+  return storedRecord(harness);
 }
 
 test('enable accepts only exactly six ASCII digits', async () => {
@@ -1396,4 +1444,494 @@ test('unregistering the alert host invalidates its dialog and callback', () => {
   assert.equal(alert.module.getAppAlert(), null, 'host cleanup must invalidate its dialog');
   alert.module.pressAppAlert(0);
   assert.equal(pressed, 0);
+});
+
+test('pattern setup requires the current PIN and rejects malformed or noncanonical patterns', async () => {
+  const harness = createHarness();
+  await prepareUnlocked(harness);
+
+  await expectRejects(harness.module.setAppLockPattern('000000', PATTERN));
+  assert.equal(harness.state().patternEnabled, false);
+  assert.equal(storedRecord(harness).pattern, undefined);
+
+  const invalid = [
+    [],
+    [0, 1, 2],
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 0],
+    [0, 1, 2, 2],
+    [4, 4, 5, 6],
+    [0, 2, 5, 8],
+    [0, 1, 2, 9],
+    [0, 1, 2, -1],
+    [0, 1, 2, 1.5],
+    [0, 1, 2, NaN],
+  ];
+  for (const pattern of invalid) {
+    await expectRejects(
+      harness.module.setAppLockPattern(PIN, pattern),
+      `pattern ${String(pattern)} must be rejected`,
+    );
+  }
+  await expectRejects(harness.module.setAppLockPattern(PIN, undefined));
+
+  assert.equal(harness.state().patternEnabled, false);
+  assert.equal(storedRecord(harness).pattern, undefined);
+
+  await harness.module.setAppLockPattern(PIN, PATTERN);
+  assert.equal(harness.state().patternEnabled, true);
+  const record = storedRecord(harness);
+  assert.ok(record.pattern, 'a valid pattern must be persisted');
+  assert.equal(Object.keys(record.pattern).sort().join(','), 'secret,verifier');
+});
+
+test('a valid pattern stores an independent 256-bit secret and hashed verifier with no plaintext nodes', async () => {
+  const harness = createHarness();
+  await prepareUnlocked(harness);
+  const randomBefore = harness.crypto.calls.random.filter((size) => size === 32).length;
+
+  await harness.module.setAppLockPattern(PIN, PATTERN);
+  assert.equal(harness.state().patternEnabled, true);
+  const record = storedRecord(harness);
+
+  assert.match(record.pattern.secret, /^[0-9a-f]{64}$/);
+  assert.match(record.pattern.verifier, /^[0-9a-f]{64}$/);
+  assert.notEqual(record.pattern.secret, record.secret, 'pattern must use its own random secret');
+  assert.notEqual(record.pattern.verifier, record.verifier);
+  assert.equal(
+    harness.crypto.calls.random.filter((size) => size === 32).length,
+    randomBefore + 1,
+    'pattern setup must draw a fresh 256-bit secret',
+  );
+  assert.deepEqual(Object.keys(record.pattern).sort(), ['secret', 'verifier']);
+  assert.equal(
+    JSON.stringify(record.pattern).includes(JSON.stringify(PATTERN)),
+    false,
+    'plain pattern nodes must never be persisted',
+  );
+
+  const source = fs.readFileSync(SERVICE_PATH, 'utf8');
+  assert.match(source, /finance\.appLock\.pattern\.v1/, 'pattern hashing needs its own domain');
+  assert.ok(
+    harness.crypto.calls.digestData.includes(
+      `finance.appLock.pattern.v1:${record.pattern.secret}:${PATTERN.join('')}`,
+    ),
+    'pattern verifier must hash the exact domain-separated canonical pattern',
+  );
+});
+
+test('cold start hydrates patternEnabled and unlocks with the canonical pattern', async () => {
+  const harness = createHarness();
+  await preparePattern(harness);
+
+  const cold = reload(harness);
+  await cold.module.hydrateAppLock();
+  assert.equal(cold.state().ready, true);
+  assert.equal(cold.state().enabled, true);
+  assert.equal(cold.state().patternEnabled, true);
+  assert.equal(cold.state().locked, true);
+
+  assert.equal(await cold.module.unlockWithPattern(PATTERN), true);
+  assert.equal(cold.state().locked, false);
+  assert.equal(cold.state().error, null);
+
+  const nextCold = reload(cold);
+  await nextCold.module.hydrateAppLock();
+  assert.equal(nextCold.state().locked, true, 'pattern unlock must not persist an open gate');
+});
+
+test('wrong pattern attempts share the PIN five-error cooldown, including after restart', async () => {
+  const harness = createHarness();
+  await preparePattern(harness);
+  await lock(harness);
+
+  assert.equal(await harness.module.unlockWithPin('000000'), false);
+  assert.equal(harness.state().failedAttempts, 1);
+  assert.equal(await harness.module.unlockWithPin('000001'), false);
+  assert.equal(harness.state().failedAttempts, 2);
+
+  assert.equal(await harness.module.unlockWithPattern(WRONG_PATTERN), false);
+  assert.equal(harness.state().failedAttempts, 3);
+  assert.equal(await harness.module.unlockWithPattern([7, 6, 3, 0]), false);
+  assert.equal(harness.state().failedAttempts, 4);
+  assert.equal(await harness.module.unlockWithPattern([8, 7, 6, 3]), false);
+  assert.equal(harness.state().failedAttempts, 5);
+
+  const retryAt = harness.state().retryAt;
+  assert.ok(retryAt - harness.clock.now() >= 29000, 'pattern errors must trigger the 30 second cooldown');
+  assert.ok(retryAt - harness.clock.now() <= 31000);
+
+  assert.equal(await harness.module.unlockWithPattern(PATTERN), false);
+  assert.equal(await harness.module.unlockWithPin(PIN), false);
+  assert.equal(harness.state().locked, true);
+
+  const cold = reload(harness);
+  await cold.module.hydrateAppLock();
+  assert.ok(cold.state().failedAttempts >= 5);
+  assert.ok(cold.state().retryAt > cold.clock.now());
+  assert.equal(await cold.module.unlockWithPattern(PATTERN), false);
+
+  cold.clock.advance(cold.state().retryAt - cold.clock.now() + 1);
+  assert.equal(await cold.module.unlockWithPattern(PATTERN), true);
+  assert.equal(cold.state().locked, false);
+  assert.equal(cold.state().failedAttempts, 0);
+});
+
+test('a wrong pattern keeps the gate closed while a correct pattern clears the error', async () => {
+  const harness = createHarness();
+  await preparePattern(harness);
+  await lock(harness);
+
+  assert.equal(await harness.module.unlockWithPattern(WRONG_PATTERN), false);
+  assert.equal(harness.state().locked, true);
+  assert.equal(typeof harness.state().error, 'string');
+  assert.ok(harness.state().error.length > 0);
+
+  assert.equal(await harness.module.unlockWithPattern([0, 2, 5, 8]), false, 'noncanonical patterns must fail');
+  assert.equal(harness.state().locked, true);
+
+  assert.equal(await harness.module.unlockWithPattern(PATTERN), true);
+  assert.equal(harness.state().locked, false);
+  assert.equal(harness.state().error, null);
+  assert.equal(harness.state().failedAttempts, 0);
+});
+
+test('unlockWithPattern fails safely for malformed runtime patterns', async () => {
+  const harness = createHarness();
+  await preparePattern(harness);
+  await lock(harness);
+
+  for (const value of [null, undefined, [], [0, 1, 2], [0, 1, 2, 9], [0, 2, 5, 8], '0125']) {
+    assert.equal(
+      await harness.module.unlockWithPattern(value),
+      false,
+      `malformed pattern ${String(value)} must not unlock`,
+    );
+    assert.equal(harness.state().locked, true);
+  }
+
+  assert.equal(await harness.module.unlockWithPattern(PATTERN), true);
+});
+
+test('removing the pattern requires the current PIN and leaves PIN unlock intact', async () => {
+  const harness = createHarness();
+  await preparePattern(harness);
+
+  await expectRejects(harness.module.setAppLockPattern('000000', null));
+  assert.equal(harness.state().patternEnabled, true);
+  assert.ok(storedRecord(harness).pattern);
+
+  await harness.module.setAppLockPattern(PIN, null);
+  assert.equal(harness.state().patternEnabled, false);
+  assert.equal(storedRecord(harness).pattern, undefined);
+
+  await lock(harness);
+  assert.equal(await harness.module.unlockWithPattern(PATTERN), false);
+  assert.equal(await harness.module.unlockWithPin(PIN), true);
+
+  const cold = reload(harness);
+  await cold.module.hydrateAppLock();
+  assert.equal(cold.state().enabled, true);
+  assert.equal(cold.state().patternEnabled, false);
+  assert.equal(cold.state().locked, true);
+  assert.equal(await cold.module.unlockWithPin(PIN), true);
+});
+
+test('changing the PIN preserves the pattern verifier and its independent secret', async () => {
+  const harness = createHarness();
+  const before = await preparePattern(harness);
+  const patternBefore = { ...before.pattern };
+
+  await harness.module.changeAppLockPin(PIN, NEXT_PIN);
+
+  const after = storedRecord(harness);
+  assert.equal(harness.state().patternEnabled, true);
+  assert.deepEqual(after.pattern, patternBefore, 'PIN changes must not rotate the pattern secret');
+
+  await lock(harness);
+  assert.equal(await harness.module.unlockWithPattern(PATTERN), true);
+
+  await lock(harness);
+  assert.equal(await harness.module.unlockWithPin(PIN), false);
+  assert.equal(await harness.module.unlockWithPin(NEXT_PIN), true);
+});
+
+test('a legacy PIN-only record hydrates without a pattern and keeps pattern unlock disabled', async () => {
+  const harness = createHarness();
+  await harness.module.hydrateAppLock();
+  await harness.module.enableAppLock(PIN);
+  assert.equal(storedRecord(harness).pattern, undefined);
+
+  const cold = reload(harness);
+  await cold.module.hydrateAppLock();
+  assert.equal(cold.state().enabled, true);
+  assert.equal(cold.state().patternEnabled, false);
+  assert.equal(cold.state().locked, true);
+  assert.equal(await cold.module.unlockWithPattern(PATTERN), false);
+  assert.equal(cold.state().locked, true);
+  assert.equal(await cold.module.unlockWithPin(PIN), true);
+});
+
+test('a corrupt stored pattern blocks hydration instead of silently dropping it', async () => {
+  const harness = createHarness();
+  await preparePattern(harness);
+  const valid = storedRecord(harness);
+
+  const corrupt = [
+    { secret: 'a'.repeat(64) },
+    { verifier: 'b'.repeat(64) },
+    { secret: 'g'.repeat(64), verifier: 'b'.repeat(64) },
+    { secret: 'a'.repeat(64), verifier: 'b'.repeat(63) },
+    { secret: 1, verifier: 2 },
+    'not-an-object',
+  ];
+
+  for (const pattern of corrupt) {
+    harness.store.data.set(
+      'finance.appLock.v1',
+      JSON.stringify({ ...valid, pattern }),
+    );
+    const cold = reload(harness);
+    await cold.module.hydrateAppLock();
+    const state = cold.state();
+    assertLockViewVisible(state);
+    assert.equal(state.locked, true, 'corrupt pattern must keep the gate closed');
+    assert.equal(state.patternEnabled, false);
+    assert.equal(state.storageError, true);
+    assert.equal(await cold.module.unlockWithPattern(PATTERN), false);
+    assert.equal(await cold.module.unlockWithPin(PIN), false);
+  }
+
+  harness.store.data.set('finance.appLock.v1', JSON.stringify(valid));
+  const cold = reload(harness);
+  await cold.module.hydrateAppLock();
+  assert.equal(cold.state().patternEnabled, true);
+  assert.equal(await cold.module.unlockWithPattern(PATTERN), true);
+});
+
+test('a background transition rejects an in-flight pattern proof', async () => {
+  const harness = createHarness();
+  await preparePattern(harness);
+  await lock(harness);
+
+  const baseline = harness.crypto.calls.digest.length;
+  const release = harness.crypto.holdDigest();
+  const proof = harness.module.unlockWithPattern(PATTERN);
+  await waitFor(
+    () => harness.crypto.calls.digest.length > baseline,
+    'pattern digest did not start',
+  );
+
+  harness.module.handleAppLockState('background');
+  release();
+
+  assert.equal(await proof, false, 'a pattern proof finishing in the background must not unlock');
+  assert.equal(harness.state().locked, true);
+  assertLockViewVisible(harness.state());
+
+  harness.module.handleAppLockState('active');
+  assert.equal(await harness.module.unlockWithPattern(PATTERN), true);
+});
+
+test('a session change invalidates an in-flight pattern proof', async () => {
+  const harness = createHarness();
+  await preparePattern(harness);
+  await lock(harness);
+
+  const baseline = harness.crypto.calls.digest.length;
+  const release = harness.crypto.holdDigest();
+  const proof = harness.module.unlockWithPattern(PATTERN);
+  await waitFor(
+    () => harness.crypto.calls.digest.length > baseline,
+    'pattern digest did not start',
+  );
+
+  harness.module.setAppLockSession(false);
+  harness.module.setAppLockSession(true);
+  release();
+
+  assert.equal(await proof, false);
+  assert.equal(harness.state().locked, true);
+  assert.equal(await harness.module.unlockWithPattern(PATTERN), true);
+});
+
+test('a stale pattern setup proof is rejected before anything is persisted', async () => {
+  const harness = createHarness();
+  await prepareUnlocked(harness);
+
+  const baseline = harness.crypto.calls.digest.length;
+  const release = harness.crypto.holdDigest();
+  const setting = harness.module.setAppLockPattern(PIN, PATTERN);
+  await waitFor(
+    () => harness.crypto.calls.digest.length > baseline,
+    'PIN reauthentication digest did not start',
+  );
+
+  harness.module.handleAppLockState('background');
+  release();
+
+  await expectRejects(setting);
+  assert.equal(harness.state().patternEnabled, false);
+  assert.equal(storedRecord(harness).pattern, undefined);
+  assert.equal(harness.state().locked, true);
+
+  harness.module.handleAppLockState('active');
+  assert.equal(await harness.module.unlockWithPin(PIN), true);
+});
+
+test('pattern setup reports success only after the durable write lands', async () => {
+  const harness = createHarness();
+  await prepareUnlocked(harness);
+
+  const release = harness.store.holdWrites();
+  let resolved = false;
+  const pending = harness.module.setAppLockPattern(PIN, PATTERN).then(() => {
+    resolved = true;
+  });
+  await flush();
+
+  assert.equal(resolved, false, 'setup must await SecureStore');
+  assert.equal(harness.state().patternEnabled, false);
+  assert.equal(storedRecord(harness).pattern, undefined);
+
+  release();
+  await pending;
+  assert.equal(harness.state().patternEnabled, true);
+  assert.ok(storedRecord(harness).pattern);
+});
+
+test('a failed pattern write rejects and keeps the previous pattern state', async () => {
+  const harness = createHarness();
+  await prepareUnlocked(harness);
+  harness.store.fail.set = true;
+
+  await expectRejects(harness.module.setAppLockPattern(PIN, PATTERN));
+  assert.equal(harness.state().patternEnabled, false);
+  assert.equal(storedRecord(harness).pattern, undefined);
+  assertLockViewVisible(harness.state());
+
+  harness.store.fail.set = false;
+  await harness.module.hydrateAppLock();
+  assert.equal(harness.state().patternEnabled, false);
+  assert.equal(await harness.module.unlockWithPin(PIN), true);
+  await harness.module.setAppLockPattern(PIN, PATTERN);
+  assert.equal(harness.state().patternEnabled, true);
+});
+
+test('a failed durable write during pattern unlock never opens the gate', async () => {
+  const harness = createHarness();
+  await preparePattern(harness);
+  await lock(harness);
+  harness.store.fail.set = true;
+
+  const result = await settle(harness.module.unlockWithPattern(PATTERN));
+  assert.notEqual(result.ok && result.value === true, true);
+  assert.equal(harness.state().locked, true);
+  assert.equal(harness.state().storageError, true);
+  assertLockViewVisible(harness.state());
+
+  harness.store.fail.set = false;
+  const cold = reload(harness);
+  await cold.module.hydrateAppLock();
+  assert.equal(cold.state().locked, true);
+  assert.equal(await cold.module.unlockWithPattern(PATTERN), true);
+});
+
+test('disabling the lock also removes a configured pattern', async () => {
+  const harness = createHarness();
+  await preparePattern(harness);
+
+  await harness.module.disableAppLock(PIN);
+  assert.equal(harness.state().enabled, false);
+  assert.equal(harness.state().patternEnabled, false);
+  assert.equal(harness.store.data.has('finance.appLock.v1'), false);
+
+  const cold = reload(harness);
+  await cold.module.hydrateAppLock();
+  assert.equal(cold.state().enabled, false);
+  assert.equal(cold.state().patternEnabled, false);
+  assert.equal(cold.state().locked, false);
+  assert.equal(await cold.module.unlockWithPattern(PATTERN), false);
+});
+
+test('fresh sign-in reset clears the pattern durably', async () => {
+  const harness = createHarness();
+  await preparePattern(harness);
+
+  await harness.module.resetAppLockAfterSignIn();
+  assert.equal(harness.state().enabled, false);
+  assert.equal(harness.state().patternEnabled, false);
+  assert.equal(harness.store.data.has('finance.appLock.v1'), false);
+
+  const cold = reload(harness);
+  await cold.module.hydrateAppLock();
+  assert.equal(cold.state().enabled, false);
+  assert.equal(cold.state().patternEnabled, false);
+  assert.equal(await cold.module.unlockWithPattern(PATTERN), false);
+});
+
+test('an interrupted disable restores the pattern from the pending record', async () => {
+  const harness = createHarness();
+  await preparePattern(harness);
+  const record = storedRecord(harness);
+
+  harness.store.data.set('finance.appLock.pendingDisable.v1', JSON.stringify(record));
+  harness.store.data.delete('finance.appLock.v1');
+
+  const cold = reload(harness);
+  await cold.module.hydrateAppLock();
+  assert.equal(cold.state().enabled, true);
+  assert.equal(cold.state().patternEnabled, true);
+  assert.equal(cold.state().locked, true);
+  assert.equal(await cold.module.unlockWithPattern(PATTERN), true);
+  assert.equal(harness.store.data.has('finance.appLock.pendingDisable.v1'), false);
+});
+
+test('pattern settings require and confirm the pattern twice, then clear transient input on privacy transitions', () => {
+  const source = fs.readFileSync(path.join(root, 'app/app-lock.tsx'), 'utf8');
+
+  assert.match(
+    source,
+    /const \[confirmPattern, setConfirmPattern\] = useState<number\[\]>\(\[\]\);/,
+    'setup must collect a second pattern entry for confirmation',
+  );
+  assert.match(source, /patternsMatch\(nextCandidate, confirmCandidate\)/);
+  assert.match(source, /setAppLockPattern\(currCandidate, nextCandidate\)/);
+  assert.match(source, /setNewPattern\(\[\]\);[\s\S]*setConfirmPattern\(\[\]\);/);
+  assert.match(source, /useFocusEffect\([\s\S]*clearAllPinFields\(\)/);
+  assert.match(source, /AppState\.addEventListener\('change'[\s\S]*clearAllPinFields\(\)/);
+  assert.doesNotMatch(source, /setAppLockPattern\([^)]*newPatternRef\.current\)/);
+});
+
+test('the unlock view defaults to PIN, offers a pattern fallback, and clears transient pattern input', () => {
+  const view = fs.readFileSync(path.join(root, 'components/security/AppLockView.tsx'), 'utf8');
+  const input = fs.readFileSync(path.join(root, 'components/security/PatternInput.tsx'), 'utf8');
+
+  assert.match(view, /useState<UnlockMethod>\('pin'\)/, 'PIN must remain the default unlock method');
+  assert.match(view, /unlockWithPattern\(candidate\)/);
+  assert.match(view, /'Gunakan pola kunci'/);
+  assert.match(view, /'Gunakan PIN 6 digit'/);
+  assert.match(view, /patternRef\.current = \[\];[\s\S]*setPattern\(\[\]\);/);
+  assert.match(view, /AppState\.addEventListener\('change'[\s\S]*setPattern\(\[\]\)/);
+
+  assert.match(input, /accessibilityRole="button"/);
+  assert.match(input, /Mode ketuk titik berurutan/);
+  assert.match(input, /Hapus pola/);
+  assert.match(input, /const handleClear = useCallback/);
+  assert.doesNotMatch(input, /onSubmit|onComplete|autoSubmit/i, 'the grid must not auto-submit');
+});
+
+test('pattern setup snapshots the caller input before the first await', async () => {
+  const harness = createHarness();
+  await prepareUnlocked(harness);
+
+  const input = [...PATTERN];
+  const setting = harness.module.setAppLockPattern(PIN, input);
+  input.length = 0;
+  input.push(8, 8, 8, 8);
+
+  await setting;
+  assert.equal(harness.state().patternEnabled, true);
+
+  await lock(harness);
+  assert.equal(await harness.module.unlockWithPattern(PATTERN), true, 'the mutated UI array must not change the saved pattern');
 });

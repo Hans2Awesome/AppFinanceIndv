@@ -21,6 +21,8 @@ import { Colors, Fonts, Radius, Space, Type } from '../utils/theme';
 import { Screen } from '../components/ui/Screen';
 import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
+import { PatternInput } from '../components/security/PatternInput';
+import { isValidLockPattern } from '../utils/lockPattern';
 import {
   changeAppLockPin,
   disableAppLock,
@@ -29,6 +31,7 @@ import {
   getBiometricAvailability,
   hydrateAppLock,
   setAppLockBiometrics,
+  setAppLockPattern,
   subscribeAppLock,
 } from '../services/appLock';
 
@@ -36,6 +39,18 @@ const PIN_PATTERN = /^[0-9]{6}$/;
 
 function sanitizePinInput(value: string): string {
   return value.replace(/[^0-9]/g, '').slice(0, 6);
+}
+
+function patternsMatch(left: readonly number[], right: readonly number[]): boolean {
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (let i = 0; i < left.length; i += 1) {
+    if (left[i] !== right[i]) {
+      return false;
+    }
+  }
+  return true;
 }
 
 export default function AppLockSettingsScreen() {
@@ -50,6 +65,8 @@ export default function AppLockSettingsScreen() {
   const [currentPin, setCurrentPin] = useState('');
   const [changeNextPin, setChangeNextPin] = useState('');
   const [changeConfirmPin, setChangeConfirmPin] = useState('');
+  const [newPattern, setNewPattern] = useState<number[]>([]);
+  const [confirmPattern, setConfirmPattern] = useState<number[]>([]);
 
   const [error, setError] = useState<string | null>(null);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
@@ -62,6 +79,8 @@ export default function AppLockSettingsScreen() {
   const currentPinRef = useRef('');
   const changeNextPinRef = useRef('');
   const changeConfirmPinRef = useRef('');
+  const newPatternRef = useRef<number[]>([]);
+  const confirmPatternRef = useRef<number[]>([]);
   const mountedRef = useRef(true);
   const submitLockRef = useRef(false);
 
@@ -71,11 +90,15 @@ export default function AppLockSettingsScreen() {
     currentPinRef.current = '';
     changeNextPinRef.current = '';
     changeConfirmPinRef.current = '';
+    newPatternRef.current = [];
+    confirmPatternRef.current = [];
     setNewPin('');
     setConfirmPin('');
     setCurrentPin('');
     setChangeNextPin('');
     setChangeConfirmPin('');
+    setNewPattern([]);
+    setConfirmPattern([]);
   }, []);
 
   useEffect(() => {
@@ -87,6 +110,8 @@ export default function AppLockSettingsScreen() {
       currentPinRef.current = '';
       changeNextPinRef.current = '';
       changeConfirmPinRef.current = '';
+      newPatternRef.current = [];
+      confirmPatternRef.current = [];
     };
   }, []);
 
@@ -109,6 +134,13 @@ export default function AppLockSettingsScreen() {
       subscription.remove();
     };
   }, [clearAllPinFields]);
+
+  useEffect(() => {
+    if (!lockState.ready || lockState.locked || lockState.covered) {
+      clearAllPinFields();
+      setError(null);
+    }
+  }, [lockState.ready, lockState.locked, lockState.covered, clearAllPinFields]);
 
   useEffect(() => {
     let active = true;
@@ -352,6 +384,122 @@ export default function AppLockSettingsScreen() {
     }
   };
 
+  const handleSavePattern = async () => {
+    if (submitLockRef.current || isBusy || inCooldown) {
+      return;
+    }
+    const currCandidate = currentPinRef.current;
+    const nextCandidate = newPatternRef.current;
+    const confirmCandidate = confirmPatternRef.current;
+
+    if (!PIN_PATTERN.test(currCandidate)) {
+      setError('Masukkan PIN saat ini (6 digit) untuk menyimpan pola kunci.');
+      return;
+    }
+    if (!isValidLockPattern(nextCandidate)) {
+      setError('Pola baru harus menghubungkan minimal 4 titik.');
+      return;
+    }
+    if (!isValidLockPattern(confirmCandidate)) {
+      setError('Konfirmasi pola baru harus menghubungkan minimal 4 titik.');
+      return;
+    }
+    if (!patternsMatch(nextCandidate, confirmCandidate)) {
+      setError('Pola baru dan konfirmasi pola tidak cocok.');
+      return;
+    }
+
+    const wasEnabled = lockState.patternEnabled;
+    submitLockRef.current = true;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await setAppLockPattern(currCandidate, nextCandidate);
+      if (mountedRef.current) {
+        clearAllPinFields();
+        Alert.alert(
+          wasEnabled ? 'Pola kunci diperbarui' : 'Pola kunci diaktifkan',
+          'Pola 3x3 berhasil disimpan sebagai metode buka kunci pendamping PIN.'
+        );
+      }
+    } catch (err) {
+      if (mountedRef.current) {
+        clearAllPinFields();
+        setNowMs(Date.now());
+        setError(
+          err instanceof Error && err.message
+            ? err.message
+            : 'Gagal menyimpan pola kunci aplikasi.'
+        );
+      }
+    } finally {
+      if (mountedRef.current) {
+        setSubmitting(false);
+      }
+      submitLockRef.current = false;
+    }
+  };
+
+  const executeRemovePattern = async (verifiedCurrentPin: string) => {
+    if (submitLockRef.current || isBusy || inCooldown) {
+      return;
+    }
+    submitLockRef.current = true;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await setAppLockPattern(verifiedCurrentPin, null);
+      if (mountedRef.current) {
+        clearAllPinFields();
+        Alert.alert(
+          'Pola kunci dihapus',
+          'Pembukaan kunci dengan pola telah dinonaktifkan. PIN 6 digit tetap aktif.'
+        );
+      }
+    } catch (err) {
+      if (mountedRef.current) {
+        clearAllPinFields();
+        setNowMs(Date.now());
+        setError(
+          err instanceof Error && err.message
+            ? err.message
+            : 'Gagal menghapus pola kunci aplikasi.'
+        );
+      }
+    } finally {
+      if (mountedRef.current) {
+        setSubmitting(false);
+      }
+      submitLockRef.current = false;
+    }
+  };
+
+  const handleRemovePatternPrompt = () => {
+    if (submitLockRef.current || isBusy || inCooldown || !lockState.patternEnabled) {
+      return;
+    }
+    const currCandidate = currentPinRef.current;
+    if (!PIN_PATTERN.test(currCandidate)) {
+      setError('Masukkan PIN saat ini (6 digit) untuk menghapus pola kunci.');
+      return;
+    }
+
+    Alert.alert(
+      'Hapus pola kunci?',
+      'Pola kunci pada perangkat ini akan dihapus. PIN 6 digit tetap digunakan untuk membuka aplikasi.',
+      [
+        { text: 'Batal', style: 'cancel' },
+        {
+          text: 'Hapus pola',
+          style: 'destructive',
+          onPress: () => {
+            void executeRemovePattern(currCandidate);
+          },
+        },
+      ]
+    );
+  };
+
   const executeDisableLock = async (verifiedCurrentPin: string) => {
     if (submitLockRef.current || isBusy || inCooldown) {
       return;
@@ -398,7 +546,7 @@ export default function AppLockSettingsScreen() {
 
     Alert.alert(
       'Nonaktifkan kunci aplikasi?',
-      'PIN dan pengaturan sidik jari / biometrik di perangkat ini akan dihapus.',
+      'PIN, pola kunci, dan pengaturan sidik jari / biometrik di perangkat ini akan dihapus.',
       [
         { text: 'Batal', style: 'cancel' },
         {
@@ -564,7 +712,7 @@ export default function AppLockSettingsScreen() {
                     <Text style={styles.sectionHeading}>Status kunci aplikasi</Text>
                     <Text style={styles.sectionSub}>
                       Aktif di perangkat ini. Masukkan PIN saat ini untuk mengubah pengaturan
-                      biometrik, mengganti PIN, atau menonaktifkan kunci.
+                      pola, biometrik, mengganti PIN, atau menonaktifkan kunci.
                     </Text>
                   </View>
                   <View style={styles.activeBadge}>
@@ -597,6 +745,63 @@ export default function AppLockSettingsScreen() {
                   hint="Diperlukan untuk memverifikasi perubahan di bawah ini."
                   fieldStyle={styles.pinField}
                 />
+              </View>
+
+              <View style={styles.sectionBlock}>
+                <Text style={styles.sectionHeading}>Pola kunci (3x3)</Text>
+                <Text style={styles.sectionSub}>
+                  Tambahkan pola minimal 4 titik sebagai pendamping PIN 6 digit. Isi PIN saat ini
+                  di bagian atas, lalu gambar atau ketuk pola baru dan konfirmasinya.
+                </Text>
+
+                <View style={styles.biometricStatusRow}>
+                  <Text style={styles.rowLabel}>Status pola kunci</Text>
+                  <Text style={styles.rowValue}>
+                    {lockState.patternEnabled ? 'Aktif' : 'Nonaktif'}
+                  </Text>
+                </View>
+
+                <PatternInput
+                  label={lockState.patternEnabled ? 'Pola baru (4-9 titik)' : 'Buat pola baru (4-9 titik)'}
+                  value={newPattern}
+                  onChange={(next) => {
+                    if (error) setError(null);
+                    newPatternRef.current = next;
+                    setNewPattern(next);
+                  }}
+                  disabled={isBusy || inCooldown}
+                  accessibilityLabel="Pola baru 3x3"
+                />
+
+                <PatternInput
+                  label="Konfirmasi pola baru"
+                  value={confirmPattern}
+                  onChange={(next) => {
+                    if (error) setError(null);
+                    confirmPatternRef.current = next;
+                    setConfirmPattern(next);
+                  }}
+                  disabled={isBusy || inCooldown}
+                  accessibilityLabel="Konfirmasi pola baru 3x3"
+                />
+
+                <Button
+                  title={lockState.patternEnabled ? 'Simpan pola baru' : 'Aktifkan pola kunci'}
+                  icon="grid-outline"
+                  onPress={handleSavePattern}
+                  loading={isBusy}
+                  disabled={isBusy || inCooldown}
+                />
+
+                {lockState.patternEnabled ? (
+                  <Button
+                    title="Hapus pola kunci"
+                    variant="secondary"
+                    onPress={handleRemovePatternPrompt}
+                    loading={isBusy}
+                    disabled={isBusy || inCooldown}
+                  />
+                ) : null}
               </View>
 
               <View style={styles.sectionBlock}>

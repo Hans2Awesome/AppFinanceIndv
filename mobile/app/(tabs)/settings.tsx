@@ -262,7 +262,11 @@ export default function SettingsScreen() {
                   : !appLock.supported
                   ? 'Tidak tersedia di perangkat ini.'
                   : appLock.enabled
-                  ? appLock.biometricsEnabled
+                  ? appLock.patternEnabled && appLock.biometricsEnabled
+                    ? 'Aktif · PIN 6 digit, pola kunci, dan sidik jari / biometrik'
+                    : appLock.patternEnabled
+                    ? 'Aktif · PIN 6 digit dan pola kunci'
+                    : appLock.biometricsEnabled
                     ? 'Aktif · PIN 6 digit dan sidik jari / biometrik'
                     : 'Aktif · PIN 6 digit'
                   : 'Nonaktif · Lindungi aplikasi dengan PIN 6 digit'}

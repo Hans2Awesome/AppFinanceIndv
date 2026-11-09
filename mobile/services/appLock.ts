@@ -1,6 +1,7 @@
 /** Device-local privacy gate. Never stores or sends a plaintext PIN. */
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
+import { isValidLockPattern } from '../utils/lockPattern';
 
 const KEY = 'finance.appLock.v1';
 const PENDING_KEY = 'finance.appLock.pendingDisable.v1';
@@ -14,12 +15,14 @@ interface LockRecord {
   biometrics: boolean;
   failures: number;
   retryAt: number;
+  pattern?: { secret: string; verifier: string };
 }
 
 export interface AppLockState {
   ready: boolean;
   enabled: boolean;
   biometricsEnabled: boolean;
+  patternEnabled: boolean;
   locked: boolean;
   covered: boolean;
   busy: boolean;
@@ -31,7 +34,7 @@ export interface AppLockState {
 }
 
 let state: AppLockState = {
-  ready: false, enabled: false, biometricsEnabled: false, locked: true,
+  ready: false, enabled: false, biometricsEnabled: false, patternEnabled: false, locked: true,
   covered: false, busy: false, error: null, storageError: false, retryAt: 0, failedAttempts: 0,
   supported: Platform.OS !== 'web',
 };
@@ -56,6 +59,7 @@ function publish(patch: Partial<AppLockState>): void {
 function fields(value: LockRecord | null): Partial<AppLockState> {
   return {
     enabled: value !== null, biometricsEnabled: value?.biometrics ?? false,
+    patternEnabled: value?.pattern !== undefined,
     failedAttempts: value?.failures ?? 0, retryAt: value?.retryAt ?? 0,
   };
 }
@@ -70,7 +74,10 @@ function parseRecord(raw: string): LockRecord {
       !/^[0-9a-f]{64}$/.test(value.verifier) || typeof value.biometrics !== 'boolean' ||
       !Number.isSafeInteger(value.failures) || value.failures < 0 || value.failures > 5 ||
       !Number.isSafeInteger(value.retryAt) || value.retryAt < 0 ||
-      (value.failures === 5 && value.retryAt === 0)) {
+      (value.failures === 5 && value.retryAt === 0) ||
+      (value.pattern !== undefined && (value.pattern === null ||
+        typeof value.pattern.secret !== 'string' || !/^[0-9a-f]{64}$/.test(value.pattern.secret) ||
+        typeof value.pattern.verifier !== 'string' || !/^[0-9a-f]{64}$/.test(value.pattern.verifier)))) {
     throw new Error('Invalid app lock record');
   }
   return value;
@@ -177,7 +184,7 @@ function available(ticket: number, needsRecord = true): void {
     throw new Error(STORAGE_ERROR);
   }
   if (needsRecord && !record) throw new Error('Kunci aplikasi belum diaktifkan.');
-  if (Date.now() < state.retryAt) throw new Error('Terlalu banyak PIN salah. Tunggu 30 detik.');
+  if (Date.now() < state.retryAt) throw new Error('Terlalu banyak percobaan salah. Tunggu 30 detik.');
 }
 
 async function verify(pin: string, ticket: number): Promise<boolean> {
@@ -185,12 +192,18 @@ async function verify(pin: string, ticket: number): Promise<boolean> {
   validPin(pin);
   const current = record!;
   const actual = await digest(pin, current.secret);
+  return verifyDigest(actual, current.verifier, current, ticket);
+}
+
+/** PIN and pattern share one durable attempt budget and lifecycle proof. */
+async function verifyDigest(actual: string, expected: string, current: LockRecord,
+  ticket: number, label = 'PIN'): Promise<boolean> {
   active(ticket);
-  if (!equal(actual, current.verifier)) {
+  if (!equal(actual, expected)) {
     const failures = (current.retryAt > 0 && Date.now() >= current.retryAt ? 0 : current.failures) + 1;
     await persist({ ...current, failures, retryAt: failures >= 5 ? Date.now() + 30_000 : 0 });
     active(ticket);
-    publish({ error: failures >= 5 ? 'Terlalu banyak PIN salah. Tunggu 30 detik.' : 'PIN salah.' });
+    publish({ error: failures >= 5 ? 'Terlalu banyak percobaan salah. Tunggu 30 detik.' : `${label} salah.` });
     return false;
   }
   // Clearing the retry budget is durable before the gate opens.
@@ -260,6 +273,54 @@ export async function unlockWithPin(pin: string): Promise<boolean> {
   try {
     return await exclusive(async (ticket) => {
       if (!await verify(pin, ticket)) return false;
+      publish({ locked: false, error: null });
+      return true;
+    });
+  } catch { return false; }
+}
+
+function validPattern(pattern: readonly number[]): number[] {
+  if (!isValidLockPattern(pattern)) {
+    throw new Error('Pola harus menghubungkan 4 hingga 9 titik berbeda.');
+  }
+  // Snapshot before asynchronous work; callers may clear their UI input.
+  return [...pattern];
+}
+
+async function digestPattern(pattern: readonly number[], secret: string): Promise<string> {
+  const crypto = require('expo-crypto') as typeof import('expo-crypto');
+  return crypto.digestStringAsync(crypto.CryptoDigestAlgorithm.SHA256,
+    `finance.appLock.pattern.v1:${secret}:${pattern.join('')}`);
+}
+
+export async function setAppLockPattern(currentPin: string,
+  pattern: readonly number[] | null): Promise<void> {
+  return exclusive(async (ticket) => {
+    const candidate = pattern === null ? null : validPattern(pattern);
+    await requirePin(currentPin, ticket);
+    const next = { ...record! };
+    if (candidate === null) delete next.pattern;
+    else {
+      const crypto = require('expo-crypto') as typeof import('expo-crypto');
+      const bytes = await crypto.getRandomBytesAsync(32);
+      const secret = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+      const verifier = await digestPattern(candidate, secret);
+      next.pattern = { secret, verifier };
+    }
+    active(ticket);
+    await persistSetting(next, ticket);
+  });
+}
+
+export async function unlockWithPattern(pattern: readonly number[]): Promise<boolean> {
+  try {
+    return await exclusive(async (ticket) => {
+      available(ticket);
+      const candidate = validPattern(pattern);
+      const current = record!;
+      if (!current.pattern) throw new Error('Pola kunci belum diaktifkan. Gunakan PIN.');
+      const actual = await digestPattern(candidate, current.pattern.secret);
+      if (!await verifyDigest(actual, current.pattern.verifier, current, ticket, 'Pola')) return false;
       publish({ locked: false, error: null });
       return true;
     });

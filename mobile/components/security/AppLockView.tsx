@@ -19,18 +19,23 @@ import { Colors, Fonts, Radius, Space, Type } from '../../utils/theme';
 import { Screen } from '../ui/Screen';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
+import { PatternInput } from './PatternInput';
+import { isValidLockPattern } from '../../utils/lockPattern';
 import {
   getAppLockState,
   getBiometricAvailability,
   hydrateAppLock,
   subscribeAppLock,
   unlockWithBiometrics,
+  unlockWithPattern,
   unlockWithPin,
 } from '../../services/appLock';
 
 export interface AppLockViewProps {
   onSignOut: () => Promise<void>;
 }
+
+type UnlockMethod = 'pin' | 'pattern';
 
 const PIN_PATTERN = /^[0-9]{6}$/;
 
@@ -46,6 +51,8 @@ export function AppLockView({ onSignOut }: AppLockViewProps) {
   );
 
   const [pin, setPin] = useState('');
+  const [pattern, setPattern] = useState<number[]>([]);
+  const [unlockMethod, setUnlockMethod] = useState<UnlockMethod>('pin');
   const [localError, setLocalError] = useState<string | null>(null);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -53,6 +60,7 @@ export function AppLockView({ onSignOut }: AppLockViewProps) {
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   const pinRef = useRef('');
+  const patternRef = useRef<number[]>([]);
   const mountedRef = useRef(true);
   const actionLockRef = useRef(false);
 
@@ -62,9 +70,16 @@ export function AppLockView({ onSignOut }: AppLockViewProps) {
     setPin(clean);
   }, []);
 
+  const updatePattern = useCallback((next: number[]) => {
+    patternRef.current = next;
+    setPattern(next);
+  }, []);
+
   const clearPinFields = useCallback(() => {
     pinRef.current = '';
+    patternRef.current = [];
     setPin('');
+    setPattern([]);
   }, []);
 
   useEffect(() => {
@@ -72,6 +87,7 @@ export function AppLockView({ onSignOut }: AppLockViewProps) {
     return () => {
       mountedRef.current = false;
       pinRef.current = '';
+      patternRef.current = [];
     };
   }, []);
 
@@ -79,7 +95,10 @@ export function AppLockView({ onSignOut }: AppLockViewProps) {
     const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
       if (nextState === 'background' || nextState === 'inactive') {
         pinRef.current = '';
+        patternRef.current = [];
         setPin('');
+        setPattern([]);
+        setUnlockMethod('pin');
         setLocalError(null);
       }
     });
@@ -87,6 +106,22 @@ export function AppLockView({ onSignOut }: AppLockViewProps) {
       subscription.remove();
     };
   }, []);
+
+  useEffect(() => {
+    if (lockState.covered || !lockState.locked || !lockState.ready) {
+      clearPinFields();
+      setUnlockMethod('pin');
+      setLocalError(null);
+    }
+  }, [lockState.covered, lockState.locked, lockState.ready, clearPinFields]);
+
+  useEffect(() => {
+    if (!lockState.patternEnabled && unlockMethod === 'pattern') {
+      patternRef.current = [];
+      setPattern([]);
+      setUnlockMethod('pin');
+    }
+  }, [lockState.patternEnabled, unlockMethod]);
 
   useEffect(() => {
     let active = true;
@@ -176,6 +211,50 @@ export function AppLockView({ onSignOut }: AppLockViewProps) {
     } finally {
       actionLockRef.current = false;
     }
+  };
+
+  const handlePatternUnlock = async () => {
+    if (actionLockRef.current || isBusy || inCooldown || !lockState.patternEnabled) {
+      return;
+    }
+    const candidate = patternRef.current;
+    if (!isValidLockPattern(candidate)) {
+      setLocalError('Hubungkan minimal 4 titik untuk membuka kunci.');
+      return;
+    }
+
+    actionLockRef.current = true;
+    setLocalError(null);
+    try {
+      const unlocked = await unlockWithPattern(candidate);
+      if (mountedRef.current) {
+        clearPinFields();
+        if (!unlocked) {
+          setNowMs(Date.now());
+        }
+      }
+    } catch (err) {
+      if (mountedRef.current) {
+        clearPinFields();
+        setNowMs(Date.now());
+        setLocalError(
+          err instanceof Error && err.message
+            ? err.message
+            : 'Gagal membuka kunci aplikasi. Coba lagi.'
+        );
+      }
+    } finally {
+      actionLockRef.current = false;
+    }
+  };
+
+  const handleSwitchUnlockMethod = (nextMethod: UnlockMethod) => {
+    if (isBusy || inCooldown) {
+      return;
+    }
+    clearPinFields();
+    setLocalError(null);
+    setUnlockMethod(nextMethod);
   };
 
   const handleBiometricUnlock = async () => {
@@ -383,9 +462,15 @@ export function AppLockView({ onSignOut }: AppLockViewProps) {
           </View>
         ) : (
           <View style={styles.panel}>
-            <Text style={styles.title}>Masukkan PIN</Text>
+            <Text style={styles.title}>
+              {unlockMethod === 'pattern' && lockState.patternEnabled
+                ? 'Gambar pola kunci'
+                : 'Masukkan PIN'}
+            </Text>
             <Text style={styles.subtitle}>
-              Masukkan PIN 6 digit untuk membuka catatan keuanganmu.
+              {unlockMethod === 'pattern' && lockState.patternEnabled
+                ? 'Hubungkan minimal 4 titik pola untuk membuka catatan keuanganmu.'
+                : 'Masukkan PIN 6 digit untuk membuka catatan keuanganmu.'}
             </Text>
 
             {inCooldown ? (
@@ -404,40 +489,81 @@ export function AppLockView({ onSignOut }: AppLockViewProps) {
               </View>
             ) : null}
 
-            <Input
-              label="PIN 6 digit"
-              placeholder="••••••"
-              value={pin}
-              onChangeText={(text) => {
-                if (localError) {
-                  setLocalError(null);
-                }
-                updatePin(text);
-              }}
-              keyboardType="number-pad"
-              inputMode="numeric"
-              maxLength={6}
-              secureTextEntry
-              autoCorrect={false}
-              autoCapitalize="none"
-              autoComplete="off"
-              textContentType="none"
-              contextMenuHidden
-              editable={!isBusy && !inCooldown}
-              returnKeyType="done"
-              onSubmitEditing={handlePinUnlock}
-              accessibilityLabel="PIN 6 digit"
-              fieldStyle={styles.pinField}
-            />
+            {unlockMethod === 'pattern' && lockState.patternEnabled ? (
+              <PatternInput
+                label="Pola 3x3"
+                value={pattern}
+                onChange={(next) => {
+                  if (localError) {
+                    setLocalError(null);
+                  }
+                  updatePattern(next);
+                }}
+                disabled={isBusy || inCooldown}
+                accessibilityLabel="Pola buka kunci aplikasi"
+              />
+            ) : (
+              <Input
+                label="PIN 6 digit"
+                placeholder="••••••"
+                value={pin}
+                onChangeText={(text) => {
+                  if (localError) {
+                    setLocalError(null);
+                  }
+                  updatePin(text);
+                }}
+                keyboardType="number-pad"
+                inputMode="numeric"
+                maxLength={6}
+                secureTextEntry
+                autoCorrect={false}
+                autoCapitalize="none"
+                autoComplete="off"
+                textContentType="none"
+                contextMenuHidden
+                editable={!isBusy && !inCooldown}
+                returnKeyType="done"
+                onSubmitEditing={handlePinUnlock}
+                accessibilityLabel="PIN 6 digit"
+                fieldStyle={styles.pinField}
+              />
+            )}
 
             <View style={styles.actions}>
-              <Button
-                title="Buka kunci"
-                onPress={handlePinUnlock}
-                loading={lockState.busy && !signingOut && !retryingBoot}
-                disabled={isBusy || inCooldown || pin.length !== 6}
-                size="lg"
-              />
+              {unlockMethod === 'pattern' && lockState.patternEnabled ? (
+                <Button
+                  title="Buka kunci dengan pola"
+                  onPress={handlePatternUnlock}
+                  loading={lockState.busy && !signingOut && !retryingBoot}
+                  disabled={isBusy || inCooldown || !isValidLockPattern(pattern)}
+                  size="lg"
+                />
+              ) : (
+                <Button
+                  title="Buka kunci"
+                  onPress={handlePinUnlock}
+                  loading={lockState.busy && !signingOut && !retryingBoot}
+                  disabled={isBusy || inCooldown || pin.length !== 6}
+                  size="lg"
+                />
+              )}
+
+              {lockState.patternEnabled ? (
+                <Button
+                  title={
+                    unlockMethod === 'pattern'
+                      ? 'Gunakan PIN 6 digit'
+                      : 'Gunakan pola kunci'
+                  }
+                  variant="secondary"
+                  icon={unlockMethod === 'pattern' ? 'keypad-outline' : 'grid-outline'}
+                  onPress={() =>
+                    handleSwitchUnlockMethod(unlockMethod === 'pattern' ? 'pin' : 'pattern')
+                  }
+                  disabled={isBusy || inCooldown}
+                />
+              ) : null}
 
               {lockState.biometricsEnabled && biometricAvailable ? (
                 <Button
