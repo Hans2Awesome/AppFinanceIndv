@@ -28,3 +28,25 @@ def _reset_login_limiter() -> None:
     register_limiter._buckets.clear()
     google_login_limiter._buckets.clear()
     google_link_limiter._buckets.clear()
+
+
+@pytest.fixture(autouse=True)
+def _reset_account_security_limiters() -> None:
+    """Keep the account-security throttles from leaking between tests.
+
+    Resolved through ``getattr`` so this fixture does not fail while the
+    account-security module is still being implemented.
+    """
+
+    from backend.app.auth import rate_limit
+
+    for name in (
+        "account_action_limiter",
+        "forgot_password_limiter",
+        "forgot_password_email_limiter",
+        "reset_password_limiter",
+    ):
+        limiter = getattr(rate_limit, name, None)
+        buckets = getattr(limiter, "_buckets", None)
+        if buckets is not None:
+            buckets.clear()

@@ -14,6 +14,7 @@ from finance_core.db.connection import close_pools, open_database
 from finance_core.db.migrations import run_migrations
 
 from .config import Settings, get_settings
+from .routes.account_security import router as account_security_router
 from .routes.auth import router as auth_router
 from .routes.categories import router as categories_router
 from .routes.debts import router as debts_router
@@ -91,6 +92,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     application.include_router(auth_router)
+    application.include_router(account_security_router)
     application.include_router(transactions_router)
     application.include_router(categories_router)
     application.include_router(reports_router)

@@ -74,6 +74,18 @@ export default function LoginScreen() {
           onSubmitEditing={handleLogin}
         />
 
+        <View style={styles.forgotRow}>
+          <Pressable
+            onPress={() => router.push('/(auth)/forgot-password')}
+            hitSlop={10}
+            style={styles.linkTap}
+            accessibilityRole="link"
+            accessibilityLabel="Forgot password"
+          >
+            <Text style={styles.link}>Forgot password?</Text>
+          </Pressable>
+        </View>
+
         <Button
           title="Masuk"
           loading={loading}
@@ -141,6 +153,11 @@ const styles = StyleSheet.create({
   error: {
     ...Type.caption,
     color: Colors.danger,
+    marginBottom: Space.md,
+  },
+  forgotRow: {
+    alignItems: 'flex-end',
+    marginTop: -Space.sm,
     marginBottom: Space.md,
   },
   footer: {

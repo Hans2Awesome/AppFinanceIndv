@@ -2,7 +2,12 @@ import { AxiosError } from 'axios';
 import { api } from './api';
 import { signOutGoogle } from './googleAuth';
 import { clearSession, saveSession } from './session';
-import { AuthResponse, User } from '../types';
+import {
+  AuthResponse,
+  ForgotPasswordResponse,
+  ResetPasswordResponse,
+  User,
+} from '../types';
 
 export const authApi = {
   async register(params: {
@@ -40,6 +45,39 @@ export const authApi = {
       password: params.password,
     });
     return res.data;
+  },
+
+  async changePassword(params: {
+    current_password: string;
+    new_password: string;
+  }): Promise<AuthResponse> {
+    const res = await api.post<AuthResponse>('/api/auth/change-password', params);
+    await saveSession(res.data);
+    return res.data;
+  },
+
+  async forgotPassword(params: { email: string }): Promise<ForgotPasswordResponse> {
+    const res = await api.post<ForgotPasswordResponse>('/api/auth/forgot-password', params);
+    return res.data;
+  },
+
+  async resetPassword(params: {
+    request_id: string;
+    code: string;
+    new_password: string;
+  }): Promise<ResetPasswordResponse> {
+    const res = await api.post<ResetPasswordResponse>('/api/auth/reset-password', params);
+    return res.data;
+  },
+
+  async deleteAccount(params: {
+    confirmation: 'DELETE';
+    password?: string;
+    id_token?: string;
+  }): Promise<void> {
+    await api.delete('/api/auth/account', { data: params });
+    await signOutGoogle();
+    await clearSession();
   },
 
   async createTelegramLinkToken(): Promise<{ code: string; expires_in_minutes: number }> {

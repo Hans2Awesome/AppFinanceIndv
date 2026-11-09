@@ -12,7 +12,7 @@ from collections.abc import Callable
 
 from .postgres_schema import run_postgres_migrations
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 def _create_core_tables(connection: sqlite3.Connection) -> None:
@@ -368,6 +368,23 @@ def _migration_6(connection: sqlite3.Connection) -> None:
     )
 
 
+def _migration_7(connection: sqlite3.Connection) -> None:
+    """Persist single-use password recovery challenges and guess budgets."""
+
+    connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS password_reset_requests (
+            request_id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+            code_hash TEXT NOT NULL,
+            expires_at INTEGER NOT NULL,
+            attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts BETWEEN 0 AND 5),
+            token_version INTEGER NOT NULL
+        )
+        """
+    )
+
+
 _MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
     1: _migration_1,
     2: _migration_2,
@@ -375,6 +392,7 @@ _MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
     4: _migration_4,
     5: _migration_5,
     6: _migration_6,
+    7: _migration_7,
 }
 
 
