@@ -27,7 +27,7 @@ function loadGoogleModule(): Promise<GoogleModule | null> {
 /** True when the Google button can be shown on this build and device. */
 export async function isGoogleAuthAvailable(): Promise<boolean> {
   const module = await loadGoogleModule();
-  if (!module) {
+  if (!module || !webClientId) {
     return false;
   }
   try {
