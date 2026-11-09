@@ -8,6 +8,10 @@
 
 **Tech Stack:** Expo 58, React Native 0.88, Expo Router, TypeScript.
 
+## Integration Notes
+
+Integrated into local `main` on 2026-11-09 after `feature/google-auth-android`. Merge commit: `d4dc6e7`. Overlap in authentication screens was already present in the branch ancestry; both merges completed without conflicts. The auth preflight fix was merged into this branch before verification. Ruff, TypeScript, and the Python suite pass on both verified branch tips and merged main (302 passed, 6 skipped because local PostgreSQL was unavailable). The prior TypeScript failure recorded below is resolved by `a1286d5`. No APK, Gradle, or EAS build was run. Keep this plan for the remaining broader device/accessibility matrix and native Google linking checks; all five user acceptance tests passed on the reported Realme device.
+
 ## Global Constraints
 
 - Do not build an APK on this VPS. Do not run Gradle, Expo native builds, or EAS Build.

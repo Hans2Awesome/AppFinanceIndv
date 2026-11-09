@@ -314,6 +314,8 @@ Android manual matrix: new Google account; returning Google account; existing pa
 
 ## Integration Notes
 
+Integrated into local `main` on 2026-11-09, before `feature/android-keyboard-layout`. Merge commit: `edde3c5`. The approved preflight fix, `a1286d5`, explicitly guards a missing Web client ID in `isGoogleAuthAvailable`; this resolves the TS2322 diagnostic found during integration. Both branch tips and merged main passed Ruff, TypeScript, and the Python suite (302 passed, 6 skipped because local PostgreSQL was unavailable). No APK, Gradle, or EAS build was run. Native/OAuth/device gates above remain pending, so retain this plan until those gates are verified. Integration does not constitute release readiness.
+
 One plan covers the whole feature because mobile configuration, new auth endpoints, user schema, identity policy and acceptance criteria are coupled. There are no sibling plans or independent merge order.
 
 Likely overlaps with other work: `finance_core/db/users.py`, both migration files, `backend/app/routes/auth.py`, `schemas.py`, mobile auth/Settings screens, dependency manifests and Yarn lockfile. Rebase/review any overlapping auth change before execution; if another migration lands first, use the next unused version consistently and rerun both upgrade suites.
